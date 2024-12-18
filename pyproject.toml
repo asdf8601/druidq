@@ -8,7 +8,7 @@ dynamic = ["version"]
 authors = [{name="Max Greco", email="mmngreco@gmail.com"}]
 readme = "README.md"
 requires-python = ">=3.6"
-dependencies = ["typer", "pandas", "pydruid[sqlalchemy]", "pyarrow"]
+dependencies = ["pandas", "pydruid[sqlalchemy]", "pyarrow"]
 
 [tool.setuptools]
 package-dir = {"" = "src"}
