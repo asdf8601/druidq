@@ -79,8 +79,12 @@ class TestGetTempFile:
     def test_temp_file_path(self):
         query = "SELECT * FROM table"
         result = get_temp_file(query)
-        assert str(result).startswith("/tmp/druidq/")
-        assert str(result).endswith(".parquet")
+        # Check path components for cross-platform compatibility
+        # Unix: ('/', 'tmp', 'druidq', 'hash.parquet')
+        # Windows: ('\\tmp', 'druidq', 'hash.parquet') or ('tmp', 'druidq', 'hash.parquet')
+        assert "tmp" in result.parts
+        assert "druidq" in result.parts
+        assert result.suffix == ".parquet"
 
     def test_same_query_same_hash(self):
         query = "SELECT * FROM table"
