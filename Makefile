@@ -1,8 +1,10 @@
 # variables
 PYVER  := 3.11
-venv   := .venv
-python := $(venv)/bin/python
-pip    := $(venv)/bin/pip
+uv     := uv
+python := $(uv) run python
+pytest := $(uv) run pytest
+ruff   := $(uv) run ruff
+black  := $(uv) run black
 
 
 ##@ Utility
@@ -12,37 +14,42 @@ help:  ## Display this help
 
 
 ##@ Setup
-$(venv):
-	python$(PYVER) -m venv $(venv);
+.PHONY: sync
+sync:  ## sync dependencies using uv
+	$(uv) sync --all-extras
+
+.PHONY: clean
+clean:  ## remove virtual environment and caches
+	rm -rf .venv
+	find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
+	find . -type f -name "*.pyc" -delete 2>/dev/null || true
 
 ##@ Development
 .PHONY: dev
-dev: $(venv) ## install dev mode
-	$(pip) install -e .
+dev: sync ## install dev mode
+	@echo "Development environment ready"
 
 .PHONY: test
-test: $(venv) ## run tests
-	@$(pip) -q install pytest
-	$(python) -m pytest tests
+test:  ## run tests
+	$(pytest) tests || ([ $$? -eq 5 ] && exit 0 || exit $$?)
 
 .PHONY: lint
-lint: $(venv)  ## run linting check
-	@$(pip) -q install ruff
-	$(python) -m ruff ./src
+lint:  ## run linting check
+	$(ruff) check ./src
+
+.PHONY: format
+format:  ## format code with black and ruff
+	$(black) -l79 ./src
+	$(ruff) check --fix ./src
 
 .PHONY: black
-black: $(venv)  ## apply black to source code
-	@$(pip) -q install black
-	$(python) -m black -l79
+black:  ## apply black to source code
+	$(black) -l79 ./src
 
 
 .PHONY: requirements.txt
-requirements.txt:  ## generate requirements.txt, e.g. make requirements.txt
-	@test -d /tmp/venv && rm -r /tmp/venv || true
-	@$(python) -m venv /tmp/venv
-	@/tmp/venv/bin/python -m pip -q install pip -U
-	@/tmp/venv/bin/python -m pip -q install . --progress-bar off
-	@/tmp/venv/bin/python -m pip freeze > requirements.txt
+requirements.txt:  ## generate requirements.txt using uv
+	$(uv) pip compile pyproject.toml -o requirements.txt
 	$(MAKE) fix-requirements.txt
 
 .PHONY: fix-requirements.txt

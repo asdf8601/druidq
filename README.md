@@ -17,21 +17,27 @@ pipx install git+https://github.com/mmngreco/druidq
 ## Usage
 
 ```bash
-# String
+# Query string (shows only output by default)
 druidq "select 1"
 
-# send python code
-druidq "select 1" -e "print(df)"
-
-# silent mode
-druidq "select 1" -e "print(df)" -q
-
-# no cache
-druidq "select 1" -e "print(df)" -f
-
-# file
+# Query from file (auto-detected)
 druidq ./query.sql
-# customs URLs
+druidq query.sql
+
+# Verbose mode (show input and output)
+druidq "select 1" -v
+
+# Quiet mode (no output except explicit prints in eval)
+druidq "select 1" -q
+
+# Eval Python code (df variable available)
+druidq "select 1" -e "print(df)"
+druidq "select 1" -q -e "print(df.head())"
+
+# No cache (force fresh query)
+druidq "select 1" --no-cache
+
+# Custom Druid URL
 DRUIDQ_URL='druid://localhost:8887/' druidq ./query.sql
 DRUIDQ_URL='druid://localhost:8082/druid/v2/sql/' druidq ./query.sql
 ```
@@ -39,28 +45,31 @@ DRUIDQ_URL='druid://localhost:8082/druid/v2/sql/' druidq ./query.sql
 
 ### Examples
 
-You can try the following:
-
 ```bash
 mkdir /tmp/druidq/
 cd /tmp/druidq/
 echo "select 1" > query.sql
 export DRUIDQ_URL='druid://localhost:8887/'
 
-# read query from a file
+# Read query from file
 druidq ./query.sql
+
+# With Python evaluation
 druidq ./query.sql -e "print(df.shape)"
 
-# use python scrits
-echo "print(df.shape)" >> script.py
+# Use Python scripts
+echo "print(df.shape)" > script.py
 echo "print(df.T)" >> script.py
 druidq ./query.sql -e ./script.py
+
+# Quiet mode with eval
+druidq ./query.sql -q -e "print(df.describe())"
 ```
 
-You can also use the `execute` function only
+### Programmatic Usage
 
 ```python
 from druidq import execute
 
-execute("select 1")
+df = execute("select 1")
 ```
