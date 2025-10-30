@@ -162,7 +162,3 @@ make sync
 # Clean environment
 make clean
 ```
-
-## Author
-
-Max Greco (mmngreco@gmail.com)
