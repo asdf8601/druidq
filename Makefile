@@ -1,5 +1,4 @@
 # variables
-PYVER  := 3.11
 uv     := uv
 python := $(uv) run python
 pytest := $(uv) run pytest
@@ -30,7 +29,7 @@ dev: sync ## install dev mode
 
 .PHONY: test
 test:  ## run tests
-	$(pytest) tests || ([ $$? -eq 5 ] && exit 0 || exit $$?)
+	$(pytest) tests
 
 .PHONY: lint
 lint:  ## run linting check
@@ -40,20 +39,3 @@ lint:  ## run linting check
 format:  ## format code with ruff
 	$(ruff) format ./src
 	$(ruff) check --fix ./src
-
-
-.PHONY: requirements.txt
-requirements.txt:  ## generate requirements.txt using uv
-	$(uv) pip compile pyproject.toml -o requirements.txt
-	$(MAKE) fix-requirements.txt
-
-.PHONY: fix-requirements.txt
-fix-requirements.txt:  ## fix requirements.txt using GH_TOKEN variable for privates repos.
-	@if [ "$(shell uname -s)" = "Linux" ]; then \
-		sed -i 's/git+ssh:\/\/git@/git+https:\/\/$${GH_TOKEN}@/' requirements.txt; \
-		sed -i '/file:/d' requirements.txt; \
-	elif [ "$(shell uname -s)" = "Darwin" ]; then \
-		sed -i '' -e 's/git+ssh:\/\/git@/git+https:\/\/$${GH_TOKEN}@/' requirements.txt; \
-		sed -i '' -e '/file:/d' requirements.txt; \
-	fi
-	@cat requirements.txt
