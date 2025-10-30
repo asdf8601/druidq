@@ -3,6 +3,7 @@ uv     := uv
 python := $(uv) run python
 pytest := $(uv) run pytest
 ruff   := $(uv) run ruff
+ty     := $(uv) run ty
 
 
 ##@ Utility
@@ -32,8 +33,9 @@ test:  ## run tests
 	$(pytest) tests
 
 .PHONY: lint
-lint:  ## run linting check
+lint:  ## run linting and type checking
 	$(ruff) check ./src
+	$(ty) check ./src
 
 .PHONY: format
 format:  ## format code with ruff
