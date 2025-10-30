@@ -1,11 +1,17 @@
 # ignore warnings from sqlalchemy and pandas
-import warnings
 
-warnings.filterwarnings("ignore")
+import warnings
 
 import pandas as pd
 from sqlalchemy.engine import create_engine
 import os
+import re
+import argparse
+from hashlib import sha1
+from pathlib import Path
+
+
+warnings.filterwarnings("ignore")
 
 
 DRUIDQ_URL = os.environ.get("DRUIDQ_URL", "druid://localhost:8887/")
@@ -17,7 +23,6 @@ def printer(*args, quiet=False, **kwargs):
 
 
 def find_fmt_keys(s: str) -> list[str] | None:
-    import re
     pattern = r"{[^}]+}"
     matches = re.findall(pattern, s)
     return matches
@@ -44,8 +49,6 @@ def get_query(args):
 
 
 def get_args():
-    import argparse
-
     parser = argparse.ArgumentParser(description="Druid Query")
     parser.add_argument("query", help="Druid query or filename")
     parser.add_argument(
@@ -85,9 +88,6 @@ def get_eval_df(args):
 
 
 def get_temp_file(query):
-    from hashlib import sha1
-    from pathlib import Path
-
     qhash = sha1(query.encode()).hexdigest()
     temp_file = Path(f"/tmp/druidq/{qhash}.parquet")
     if not temp_file.parent.exists():
@@ -96,7 +96,7 @@ def get_temp_file(query):
     return temp_file
 
 
-def execute(query, engine=None, no_cache=False, quiet=False):
+def execute(query, engine=None, no_cache=False, quiet=True):
     if engine is None:
         engine = create_engine(DRUIDQ_URL)
 
