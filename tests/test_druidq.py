@@ -1,13 +1,13 @@
-import pytest
-from unittest.mock import Mock, patch, mock_open
-from pathlib import Path
+from unittest.mock import Mock, mock_open, patch
+
 import pandas as pd
+
 from src.druidq import (
-    find_fmt_keys,
-    get_query,
-    get_eval_df,
-    get_temp_file,
     execute,
+    find_fmt_keys,
+    get_eval_df,
+    get_query,
+    get_temp_file,
 )
 
 
