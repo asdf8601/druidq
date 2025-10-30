@@ -30,11 +30,24 @@ def find_fmt_keys(s: str) -> list[str] | None:
 
 def get_query(args):
     query_in = args.query
-    try:
-        with open(query_in, "r") as f:
-            out = f.read()
-    except FileNotFoundError:
+
+    # Detect if it's a SQL query
+    is_query = (
+        query_in.strip()
+        .upper()
+        .startswith(("SELECT", "WITH", "INSERT", "UPDATE", "DELETE"))
+        or "\n" in query_in.strip()
+    )
+
+    if is_query:
         out = query_in
+    else:
+        # Try to read as file
+        try:
+            with open(query_in, "r") as f:
+                out = f.read()
+        except (FileNotFoundError, IOError):
+            out = query_in
 
     # format {{{
     fmt_keys = find_fmt_keys(out)
@@ -64,9 +77,15 @@ def get_args():
         action="store_true",
     )
     parser.add_argument(
+        "-v",
+        "--verbose",
+        help="Show input and output (query and result)",
+        action="store_true",
+    )
+    parser.add_argument(
         "-q",
         "--quiet",
-        help="Do not print the output except the code you use in eval-df",
+        help="Suppress all output except explicit prints in eval",
         action="store_true",
     )
     parser.add_argument(
@@ -101,7 +120,7 @@ def execute(query, engine=None, no_cache=False, quiet=True):
         engine = create_engine(DRUIDQ_URL)
 
     if no_cache:
-        return pd.read_sql(query, engine)
+        return pd.read_sql(query, engine.raw_connection())
 
     # cache {{
     temp_file = get_temp_file(query)
@@ -110,7 +129,7 @@ def execute(query, engine=None, no_cache=False, quiet=True):
         return pd.read_parquet(temp_file)
     # }}
 
-    df = pd.read_sql(query, engine)
+    df = pd.read_sql(query, engine.raw_connection())
 
     # cache {{
     printer(f"Saving cache: {temp_file}", quiet=quiet)
@@ -127,21 +146,31 @@ def app():
     args = get_args()
 
     query = get_query(args)
-    quiet = args.quiet
 
     if args.pdb:
         breakpoint()
 
-    printer(f"In[query]:\n{query}", quiet=quiet)
+    # Default: only output
+    # -v: input + output
+    # -q: nothing (except explicit prints in eval)
+    show_query = args.verbose
+    show_output = not args.quiet
+    show_eval_input = args.verbose
+    cache_quiet = not args.verbose
 
-    df = execute(query=query, no_cache=args.no_cache, quiet=quiet)
-    printer(f"\nOut[df]:\n{df}", quiet=quiet)
+    if show_query:
+        print(f"In[query]:\n{query}")
+
+    df = execute(query=query, no_cache=args.no_cache, quiet=cache_quiet)
+
+    if show_output:
+        print(df)
 
     if args.eval_df:
         eval_df = get_eval_df(args)
-        printer(f"\nIn[eval]:\n{eval_df}", quiet=quiet)
+        if show_eval_input:
+            print(f"\nIn[eval]:\n{eval_df}")
 
-        printer("Out[eval]:", quiet=quiet)
         exec(eval_df, globals(), locals())
 
 
