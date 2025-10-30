@@ -4,7 +4,6 @@ uv     := uv
 python := $(uv) run python
 pytest := $(uv) run pytest
 ruff   := $(uv) run ruff
-black  := $(uv) run black
 
 
 ##@ Utility
@@ -38,13 +37,9 @@ lint:  ## run linting check
 	$(ruff) check ./src
 
 .PHONY: format
-format:  ## format code with black and ruff
-	$(black) -l79 ./src
+format:  ## format code with ruff
+	$(ruff) format ./src
 	$(ruff) check --fix ./src
-
-.PHONY: black
-black:  ## apply black to source code
-	$(black) -l79 ./src
 
 
 .PHONY: requirements.txt

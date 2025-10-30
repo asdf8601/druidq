@@ -1,15 +1,14 @@
 # ignore warnings from sqlalchemy and pandas
 
-import warnings
-
-import pandas as pd
-from sqlalchemy.engine import create_engine
+import argparse
 import os
 import re
-import argparse
+import warnings
 from hashlib import sha1
 from pathlib import Path
 
+import pandas as pd
+from sqlalchemy.engine import create_engine
 
 warnings.filterwarnings("ignore")
 
