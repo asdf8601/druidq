@@ -95,6 +95,29 @@ druidq ./query.sql -e ./script.py
 druidq ./query.sql -q -e "print(df.describe())"
 ```
 
+### Auto-detect Eval from SQL Comments
+
+You can specify the evaluation script directly in your SQL file using a comment. This allows you to store the query and its processing logic together:
+
+```sql
+-- eval: script.py
+SELECT * FROM datasource 
+WHERE __time >= CURRENT_TIMESTAMP - INTERVAL '7' DAY
+```
+
+```bash
+# The eval script is automatically detected from the SQL comment
+druidq ./query.sql
+
+# Explicit --eval flag takes priority over the comment
+druidq ./query.sql -e ./other_script.py
+```
+
+**Benefits:**
+- No need to remember which eval script goes with which query
+- Query files are self-contained and portable
+- Explicit `--eval` flag still works and takes priority
+
 ### Template Queries with Environment Variables
 
 ```sql

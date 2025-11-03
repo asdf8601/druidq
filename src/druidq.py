@@ -29,6 +29,19 @@ def find_fmt_keys(s: str) -> list[str] | None:
     return matches
 
 
+def extract_eval_from_query(query: str) -> str | None:
+    """Extract eval file from -- eval: comment in SQL query"""
+    for line in query.split("\n"):
+        line = line.strip()
+        # Handle variations: "-- eval:", "--eval:", "-- eval :"
+        if line.startswith("--") and "eval:" in line:
+            # Extract everything after "eval:"
+            eval_part = line.split("eval:", 1)[1].strip()
+            if eval_part:
+                return eval_part
+    return None
+
+
 def get_query(args):
     query_in = args.query
 
@@ -40,6 +53,7 @@ def get_query(args):
         or "\n" in query_in.strip()
     )
 
+    sql_file_path = None
     if is_query:
         out = query_in
     else:
@@ -47,6 +61,7 @@ def get_query(args):
         try:
             with open(query_in, "r") as f:
                 out = f.read()
+                sql_file_path = query_in
         except (FileNotFoundError, IOError):
             out = query_in
 
@@ -59,7 +74,16 @@ def get_query(args):
             fmt_values[k] = os.environ[k]
         out = out.format(**fmt_values)
     # }}}
-    return out
+
+    # Extract eval file from comment
+    eval_file = extract_eval_from_query(out)
+
+    # Resolve relative eval paths relative to SQL file location
+    if eval_file and sql_file_path and not os.path.isabs(eval_file):
+        sql_dir = os.path.dirname(os.path.abspath(sql_file_path))
+        eval_file = os.path.join(sql_dir, eval_file)
+
+    return out, eval_file
 
 
 def get_args():
@@ -97,14 +121,19 @@ def get_args():
     return parser.parse_args()
 
 
-def get_eval_df(args):
-    eval_df_in = args.eval_df
+def get_eval_df_from_file(eval_file: str) -> str:
+    """Read eval code from file or return as-is if it's code"""
     try:
-        with open(eval_df_in, "r") as f:
+        with open(eval_file, "r") as f:
             out = f.read()
     except FileNotFoundError:
-        out = eval_df_in
+        out = eval_file
     return out
+
+
+def get_eval_df(args):
+    eval_df_in = args.eval_df
+    return get_eval_df_from_file(eval_df_in)
 
 
 def get_temp_file(query):
@@ -146,7 +175,7 @@ def execute(query, engine=None, no_cache=False, quiet=True):
 def app():
     args = get_args()
 
-    query = get_query(args)
+    query, auto_eval_file = get_query(args)
 
     if args.pdb:
         breakpoint()
@@ -167,8 +196,15 @@ def app():
     if show_output:
         print(df)
 
-    if args.eval_df:
-        eval_df = get_eval_df(args)
+    # Priority: explicit --eval-df > auto-detected from SQL
+    eval_file_to_use = args.eval_df if args.eval_df else auto_eval_file
+
+    if eval_file_to_use:
+        eval_df = (
+            get_eval_df(args)
+            if args.eval_df
+            else get_eval_df_from_file(eval_file_to_use)
+        )
         if show_eval_input:
             print(f"\nIn[eval]:\n{eval_df}")
 
