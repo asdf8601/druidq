@@ -28,37 +28,43 @@ class TestFindFmtKeys:
 class TestGetQuery:
     def test_detect_sql_query_select(self):
         args = Mock(query="SELECT * FROM table")
-        result = get_query(args)
-        assert result == "SELECT * FROM table"
+        query, eval_file = get_query(args)
+        assert query == "SELECT * FROM table"
+        assert eval_file is None
 
     def test_detect_sql_query_with(self):
         args = Mock(query="WITH cte AS (SELECT 1)")
-        result = get_query(args)
-        assert result == "WITH cte AS (SELECT 1)"
+        query, eval_file = get_query(args)
+        assert query == "WITH cte AS (SELECT 1)"
+        assert eval_file is None
 
     def test_detect_multiline_query(self):
-        query = "SELECT *\nFROM table\nWHERE id = 1"
-        args = Mock(query=query)
-        result = get_query(args)
-        assert result == query
+        query_str = "SELECT *\nFROM table\nWHERE id = 1"
+        args = Mock(query=query_str)
+        query, eval_file = get_query(args)
+        assert query == query_str
+        assert eval_file is None
 
     @patch("builtins.open", mock_open(read_data="SELECT * FROM file"))
     def test_read_from_file(self):
         args = Mock(query="query.sql")
-        result = get_query(args)
-        assert result == "SELECT * FROM file"
+        query, eval_file = get_query(args)
+        assert query == "SELECT * FROM file"
+        assert eval_file is None
 
     @patch("builtins.open", side_effect=FileNotFoundError)
     def test_file_not_found_fallback(self, mock_file):
         args = Mock(query="nonexistent.sql")
-        result = get_query(args)
-        assert result == "nonexistent.sql"
+        query, eval_file = get_query(args)
+        assert query == "nonexistent.sql"
+        assert eval_file is None
 
     @patch.dict("os.environ", {"table_name": "users"})
     def test_format_with_env_vars(self):
         args = Mock(query="SELECT * FROM {table_name}")
-        result = get_query(args)
-        assert result == "SELECT * FROM users"
+        query, eval_file = get_query(args)
+        assert query == "SELECT * FROM users"
+        assert eval_file is None
 
 
 class TestGetEvalDf:
