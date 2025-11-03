@@ -27,44 +27,60 @@ class TestFindFmtKeys:
 
 class TestGetQuery:
     def test_detect_sql_query_select(self):
-        args = Mock(query="SELECT * FROM table")
+        args = Mock(query="SELECT * FROM table", file=False)
         query, eval_file = get_query(args)
         assert query == "SELECT * FROM table"
         assert eval_file is None
 
     def test_detect_sql_query_with(self):
-        args = Mock(query="WITH cte AS (SELECT 1)")
+        args = Mock(query="WITH cte AS (SELECT 1)", file=False)
         query, eval_file = get_query(args)
         assert query == "WITH cte AS (SELECT 1)"
         assert eval_file is None
 
     def test_detect_multiline_query(self):
         query_str = "SELECT *\nFROM table\nWHERE id = 1"
-        args = Mock(query=query_str)
+        args = Mock(query=query_str, file=False)
         query, eval_file = get_query(args)
         assert query == query_str
         assert eval_file is None
 
     @patch("builtins.open", mock_open(read_data="SELECT * FROM file"))
     def test_read_from_file(self):
-        args = Mock(query="query.sql")
+        args = Mock(query="query.sql", file=False)
         query, eval_file = get_query(args)
         assert query == "SELECT * FROM file"
         assert eval_file is None
 
     @patch("builtins.open", side_effect=FileNotFoundError)
     def test_file_not_found_fallback(self, mock_file):
-        args = Mock(query="nonexistent.sql")
+        args = Mock(query="nonexistent.sql", file=False)
         query, eval_file = get_query(args)
         assert query == "nonexistent.sql"
         assert eval_file is None
 
     @patch.dict("os.environ", {"table_name": "users"})
     def test_format_with_env_vars(self):
-        args = Mock(query="SELECT * FROM {table_name}")
+        args = Mock(query="SELECT * FROM {table_name}", file=False)
         query, eval_file = get_query(args)
         assert query == "SELECT * FROM users"
         assert eval_file is None
+
+    @patch("builtins.open", mock_open(read_data="SELECT * FROM explicit"))
+    def test_explicit_file_flag(self):
+        args = Mock(query="query.sql", file=True)
+        query, eval_file = get_query(args)
+        assert query == "SELECT * FROM explicit"
+        assert eval_file is None
+
+    @patch("builtins.open", side_effect=FileNotFoundError)
+    def test_explicit_file_flag_raises_on_missing_file(self, mock_file):
+        args = Mock(query="missing.sql", file=True)
+        try:
+            get_query(args)
+            assert False, "Expected FileNotFoundError"
+        except FileNotFoundError:
+            pass
 
 
 class TestGetEvalDf:

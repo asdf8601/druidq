@@ -45,25 +45,34 @@ def extract_eval_from_query(query: str) -> str | None:
 def get_query(args):
     query_in = args.query
 
-    # Detect if it's a SQL query
-    is_query = (
-        query_in.strip()
-        .upper()
-        .startswith(("SELECT", "WITH", "INSERT", "UPDATE", "DELETE"))
-        or "\n" in query_in.strip()
-    )
-
     sql_file_path = None
-    if is_query:
-        out = query_in
+
+    # Check if explicit file flag is set
+    if hasattr(args, "file") and args.file:
+        # Explicit file mode - always read from file
+        with open(query_in, "r") as f:
+            out = f.read()
+            sql_file_path = query_in
     else:
-        # Try to read as file
-        try:
-            with open(query_in, "r") as f:
-                out = f.read()
-                sql_file_path = query_in
-        except (FileNotFoundError, IOError):
+        # Auto-detect mode (backward compatible)
+        # Detect if it's a SQL query
+        is_query = (
+            query_in.strip()
+            .upper()
+            .startswith(("SELECT", "WITH", "INSERT", "UPDATE", "DELETE"))
+            or "\n" in query_in.strip()
+        )
+
+        if is_query:
             out = query_in
+        else:
+            # Try to read as file
+            try:
+                with open(query_in, "r") as f:
+                    out = f.read()
+                    sql_file_path = query_in
+            except (FileNotFoundError, IOError):
+                out = query_in
 
     # format {{{
     fmt_keys = find_fmt_keys(out)
@@ -89,6 +98,12 @@ def get_query(args):
 def get_args():
     parser = argparse.ArgumentParser(description="Druid Query")
     parser.add_argument("query", help="Druid query or filename")
+    parser.add_argument(
+        "-f",
+        "--file",
+        help="Read query from file (explicit file mode)",
+        action="store_true",
+    )
     parser.add_argument(
         "-e",
         "--eval-df",
