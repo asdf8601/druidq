@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import argparse
-import json
 import os
 import re
 import warnings
@@ -224,6 +223,24 @@ def get_args():
         help="Run pdb on start",
         action="store_true",
     )
+    parser.add_argument(
+        "--dry-run",
+        help="Show rendered query without executing it",
+        action="store_true",
+    )
+    parser.add_argument(
+        "-t",
+        "--timing",
+        help="Show query execution time",
+        action="store_true",
+    )
+    parser.add_argument(
+        "-o",
+        "--output",
+        help="Export format: json, csv, or parquet (prints to stdout or file)",
+        choices=["json", "csv", "parquet"],
+        default=None,
+    )
     return parser.parse_args()
 
 
@@ -279,12 +296,23 @@ def execute(query, engine=None, no_cache=False, quiet=True):
 
 
 def app():
+    import time
+
     args = get_args()
 
     query, auto_eval_inline, auto_eval_file, params = get_query(args)
 
     if args.pdb:
         breakpoint()
+
+    # Handle --dry-run: show query and exit
+    if args.dry_run:
+        print(f"Rendered query:\n{query}")
+        if params:
+            print("\nParameters used:")
+            for key, value in params.items():
+                print(f"  {key}: {value}")
+        return
 
     # Default: only output
     # -v: input + output
@@ -297,9 +325,25 @@ def app():
     if show_query:
         print(f"In[query]:\n{query}")
 
+    # Execute query with optional timing
+    start_time = time.time() if args.timing else 0.0
     df = execute(query=query, no_cache=args.no_cache, quiet=cache_quiet)
+    if args.timing:
+        elapsed = time.time() - start_time
+        print(f"\nExecution time: {elapsed:.3f}s")
 
-    if show_output:
+    # Handle --output: export to different formats
+    if args.output:
+        if args.output == "json":
+            print(df.to_json(orient="records", indent=2))
+        elif args.output == "csv":
+            print(df.to_csv(index=False))
+        elif args.output == "parquet":
+            # For parquet, need to write to file
+            output_file = "output.parquet"
+            df.to_parquet(output_file)
+            print(f"Exported to {output_file}")
+    elif show_output:
         print(df)
 
     # Priority: CLI flags > auto-detected from SQL

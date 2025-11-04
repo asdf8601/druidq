@@ -65,6 +65,17 @@ druidq "select 1" --no-cache
 # Custom Druid URL
 DRUIDQ_URL='druid://localhost:8887/' druidq ./query.sql
 DRUIDQ_URL='druid://localhost:8082/druid/v2/sql/' druidq ./query.sql
+
+# Dry-run to see rendered query without executing
+druidq ./query.sql --dry-run
+
+# Show execution time
+druidq ./query.sql --timing
+
+# Export to different formats
+druidq ./query.sql --output json
+druidq ./query.sql --output csv
+druidq ./query.sql --output parquet
 ```
 
 ## Environment Variables
@@ -249,6 +260,34 @@ plt.savefig('metrics_distribution.png')
 print('Saved plot to metrics_distribution.png')
 ```
 
+### Debugging and Optimization
+
+```bash
+# Preview rendered query before execution
+druidq query.sql --dry-run
+
+# Measure query performance
+druidq query.sql --timing
+
+# Export results for further processing
+druidq query.sql --output json > results.json
+druidq query.sql --output csv | head -10
+```
+
+### Pipeline Integration
+
+```bash
+# Export to CSV and pipe to other tools
+druidq "SELECT * FROM events LIMIT 100" --output csv | \
+  awk -F',' '{print $1}' | \
+  sort | uniq -c
+
+# Save query results as parquet for later analysis
+druidq large_query.sql --output parquet --timing
+# Output: Execution time: 2.347s
+#         Exported to output.parquet
+```
+
 ## Development
 
 ### Setup
@@ -298,5 +337,8 @@ Options:
   -n, --no-cache        Do not use cache
   -v, --verbose         Show input and output (query and result)
   -q, --quiet           Suppress all output except explicit prints in eval
+  --dry-run             Show rendered query without executing it
+  -t, --timing          Show query execution time
+  -o, --output FORMAT   Export format: json, csv, or parquet
   --pdb                 Run pdb on start
 ```
