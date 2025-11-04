@@ -5,6 +5,8 @@ from __future__ import annotations
 import argparse
 import os
 import re
+import shutil
+import subprocess
 import warnings
 from hashlib import sha1
 from pathlib import Path
@@ -257,6 +259,11 @@ Priority:
         choices=["json", "csv", "parquet"],
         default=None,
     )
+    parser.add_argument(
+        "--noti",
+        help="Send notification when query completes (requires noti)",
+        action="store_true",
+    )
     return parser.parse_args()
 
 
@@ -282,6 +289,26 @@ def get_temp_file(query):
         temp_file.parent.mkdir(parents=True, exist_ok=True)
 
     return temp_file
+
+
+def send_notification(title: str, message: str, show_time: bool = False):
+    """Send desktop notification using noti CLI tool if available"""
+    if not shutil.which("noti"):
+        printer(
+            "Warning: noti command not found. "
+            "Install from https://github.com/variadico/noti",
+            quiet=False,
+        )
+        return
+
+    cmd = ["noti", "-t", title, "-m", message]
+    if show_time:
+        cmd.append("-e")
+
+    try:
+        subprocess.run(cmd, check=False, capture_output=True)
+    except Exception as e:
+        printer(f"Warning: Failed to send notification: {e}", quiet=False)
 
 
 def execute(query, engine=None, no_cache=False, quiet=True):
@@ -342,10 +369,12 @@ def app():
         print(f"In[query]:\n{query}")
 
     # Execute query with optional timing
-    start_time = time.time() if args.timing else 0.0
+    start_time = time.time() if (args.timing or args.noti) else 0.0
     df = execute(query=query, no_cache=args.no_cache, quiet=cache_quiet)
-    if args.timing:
+    elapsed = 0.0
+    if args.timing or args.noti:
         elapsed = time.time() - start_time
+    if args.timing:
         print(f"\nExecution time: {elapsed:.3f}s")
 
     # Handle --output: export to different formats
@@ -388,6 +417,15 @@ def app():
             print(f"\nIn[eval]:\n{eval_code}")
 
         exec(eval_code, globals(), locals())
+
+    # Send notification if requested
+    if args.noti:
+        rows = len(df)
+        title = "DruidQ - Query Complete"
+        message = f"Query returned {rows} row{'s' if rows != 1 else ''}"
+        if args.timing:
+            message += f" in {elapsed:.3f}s"
+        send_notification(title, message, show_time=False)
 
 
 if __name__ == "__main__":

@@ -14,6 +14,7 @@ Simple Druid CLI to query Apache Druid using SQLAlchemy with caching support and
 - Export results to JSON, CSV, or Parquet formats
 - Dry-run mode to preview queries before execution
 - Query execution timing
+- Desktop notifications when queries complete
 
 ## Table of Contents
 
@@ -60,6 +61,18 @@ cd druidq
 uv pip install -e .
 ```
 
+### Optional: Desktop notifications
+
+To enable desktop notifications with the `--noti` flag, install [noti](https://github.com/variadico/noti):
+
+```bash
+# macOS
+brew install noti
+
+# Linux (download from releases)
+# https://github.com/variadico/noti/releases
+```
+
 > [!Note]
 > If you are on MacOS and encounter issues, consider creating a new virtual environment.
 
@@ -103,6 +116,10 @@ druidq -f ./query.sql --timing
 druidq -f ./query.sql --output json
 druidq -f ./query.sql --output csv
 druidq -f ./query.sql --output parquet
+
+# Send desktop notification when query completes (requires noti)
+druidq -f ./query.sql --noti
+druidq -f ./query.sql --timing --noti  # Includes timing in notification
 ```
 
 ## SQL Annotations
