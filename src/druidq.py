@@ -31,86 +31,37 @@ def find_fmt_keys(s: str) -> list[str] | None:
 
 
 def extract_params_from_query(query: str) -> dict[str, str] | None:
-    """Extract params dict from -- params = {...} comment in SQL query
+    """Extract params from -- @param key value comments in SQL query
 
-    Supports both single-line and multi-line format:
-    -- params = {"key": "value"}
+    Format:
+    -- @param token 8592-3462-01
+    -- @param start_date 2025-10-30
+    -- @param publisher_name The New York Times
 
-    Or:
-    -- params = {
-    --   "key": "value",
-    --   "other": "data"
-    -- }
+    Everything after the key name is treated as the value (supports spaces).
 
     Returns:
         dict[str, str] | None: Dictionary of parameters or None if not found
     """
-    lines = query.split("\n")
-    json_parts = []
-    in_params = False
+    params = {}
+    pattern = r"--\s*@param\s+(\S+)\s+(.+)"
 
-    for line in lines:
-        line_stripped = line.strip()
+    for line in query.split("\n"):
+        match = re.match(pattern, line.strip())
+        if match:
+            key = match.group(1)
+            value = match.group(2).strip()
+            params[key] = value
 
-        # Start of params block
-        if (
-            line_stripped.startswith("--")
-            and "params" in line_stripped
-            and "=" in line_stripped
-        ):
-            in_params = True
-            # Extract everything after "params ="
-            params_part = line_stripped.split("params", 1)[1].strip()
-            if params_part.startswith("="):
-                params_part = params_part[1:].strip()
-                # Remove leading -- if present
-                if params_part.startswith("--"):
-                    params_part = params_part[2:].strip()
-                json_parts.append(params_part)
-
-                # Try to parse immediately (single-line case)
-                try:
-                    return json.loads(params_part)
-                except json.JSONDecodeError:
-                    # Multi-line, continue collecting
-                    continue
-
-        # Continue collecting multi-line params
-        elif in_params and line_stripped.startswith("--"):
-            # Remove the comment prefix
-            content = line_stripped[2:].strip()
-            json_parts.append(content)
-
-            # Check if we have a complete JSON
-            combined = " ".join(json_parts)
-            try:
-                return json.loads(combined)
-            except json.JSONDecodeError:
-                # Not complete yet, continue
-                continue
-
-        # End of params block (non-comment line or comment without --)
-        elif in_params:
-            # Try one final parse
-            combined = " ".join(json_parts)
-            try:
-                return json.loads(combined)
-            except json.JSONDecodeError:
-                return None
-
-    # End of query, try final parse
-    if json_parts:
-        combined = " ".join(json_parts)
-        try:
-            return json.loads(combined)
-        except json.JSONDecodeError:
-            pass
-
-    return None
+    return params if params else None
 
 
 def extract_eval_from_query(query: str) -> tuple[str | None, str | None]:
-    """Extract eval code or file from -- eval = or -- eval-file = comments
+    """Extract eval code or file from -- @eval or -- @eval-file comments
+
+    Format:
+    -- @eval print(df.head())
+    -- @eval-file script.py
 
     Returns:
         tuple[str | None, str | None]: (inline_code, file_path)
@@ -118,29 +69,22 @@ def extract_eval_from_query(query: str) -> tuple[str | None, str | None]:
     inline_code = None
     file_path = None
 
+    pattern_eval_file = r"--\s*@eval-file\s+(.+)"
+    pattern_eval = r"--\s*@eval\s+(.+)"
+
     for line in query.split("\n"):
         line = line.strip()
 
-        # Handle -- eval-file = path/to/file.py
-        if line.startswith("--") and "eval-file" in line and "=" in line:
-            file_part = line.split("eval-file", 1)[1].strip()
-            if file_part.startswith("="):
-                file_part = file_part[1:].strip()
-                # Remove quotes if present
-                file_path = file_part.strip('"').strip("'")
+        # Handle -- @eval-file path/to/file.py
+        match = re.match(pattern_eval_file, line)
+        if match:
+            file_path = match.group(1).strip().strip('"').strip("'")
 
-        # Handle -- eval = "code here" or -- eval = 'code here'
-        elif (
-            line.startswith("--")
-            and "eval" in line
-            and "=" in line
-            and "eval-file" not in line
-        ):
-            code_part = line.split("eval", 1)[1].strip()
-            if code_part.startswith("="):
-                code_part = code_part[1:].strip()
-                # Remove quotes if present
-                inline_code = code_part.strip('"').strip("'")
+        # Handle -- @eval code here
+        else:
+            match = re.match(pattern_eval, line)
+            if match:
+                inline_code = match.group(1).strip()
 
     return inline_code, file_path
 
@@ -187,10 +131,11 @@ def get_query(args):
     lines = []
     for line in out.split("\n"):
         line_stripped = line.strip()
-        # Skip eval and params comment lines
+        # Skip @param, @eval, @eval-file comment lines
         if line_stripped.startswith("--") and (
-            ("eval" in line_stripped and "=" in line_stripped)
-            or ("params" in line_stripped and "=" in line_stripped)
+            "@param" in line_stripped
+            or "@eval-file" in line_stripped
+            or "@eval" in line_stripped
         ):
             continue
         lines.append(line)

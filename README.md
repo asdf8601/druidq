@@ -7,7 +7,7 @@ Simple Druid CLI to query Apache Druid using SQLAlchemy with caching support and
 - Query Druid using SQL strings or files
 - Smart caching system (queries cached in `/tmp/druidq/`)
 - Python evaluation context with direct DataFrame access
-- Parameter templating with `-- params = {...}` comments
+- Parameter templating with `-- @param key value` annotations
 - Environment variable templating in queries
 - Inline and file-based Python evaluation
 - Verbose and quiet modes for different use cases
@@ -107,7 +107,7 @@ You can specify the evaluation code or script directly in your SQL file using co
 #### Inline evaluation code
 
 ```sql
--- eval = print(df.head())
+-- @eval print(df.head())
 SELECT * FROM datasource 
 WHERE __time >= CURRENT_TIMESTAMP - INTERVAL '7' DAY
 ```
@@ -115,7 +115,7 @@ WHERE __time >= CURRENT_TIMESTAMP - INTERVAL '7' DAY
 #### External evaluation file
 
 ```sql
--- eval-file = script.py
+-- @eval-file script.py
 SELECT * FROM datasource 
 WHERE __time >= CURRENT_TIMESTAMP - INTERVAL '7' DAY
 ```
@@ -132,8 +132,8 @@ druidq ./query.sql --eval-file other_script.py
 **Priority order:**
 1. `--eval` flag (inline code)
 2. `--eval-file` flag (file)
-3. `-- eval =` comment (inline code)
-4. `-- eval-file =` comment (file)
+3. `-- @eval` comment (inline code)
+4. `-- @eval-file` comment (file)
 
 **Benefits:**
 - No need to remember which eval script goes with which query
@@ -145,8 +145,9 @@ druidq ./query.sql --eval-file other_script.py
 You can define parameters directly in your SQL file and use them in both queries and eval code:
 
 ```sql
--- params = {"token": "7739-9592-01", "table": "my_table"}
--- eval = print('Processing token: {{token}}')
+-- @param token 7739-9592-01
+-- @param table my_table
+-- @eval print('Processing token: {{token}}')
 
 SELECT * FROM {{table}}
 WHERE publisher_token = '{{token}}'
@@ -155,11 +156,11 @@ WHERE publisher_token = '{{token}}'
 
 Parameters use `{{variable}}` syntax (double braces) and work in:
 - SQL queries
-- Inline eval code (`-- eval =`)
-- External eval files (`-- eval-file =`)
+- Inline eval code (`-- @eval`)
+- External eval files (`-- @eval-file`)
 - CLI eval flags (`--eval` and `--eval-file`)
 
-**Priority:** Parameters defined in `-- params =` take precedence over environment variables.
+**Priority:** Parameters defined with `-- @param` take precedence over environment variables.
 
 ### Template Queries with Environment Variables
 
@@ -205,8 +206,9 @@ Create a self-contained SQL file with parameters and processing logic:
 
 ```sql
 -- query_with_params.sql
--- params = {"publisher": "ABC123", "days": "7"}
--- eval = print(f'Total records: {len(df)}'); print(df.describe())
+-- @param publisher ABC123
+-- @param days 7
+-- @eval print(f'Total records: {len(df)}'); print(df.describe())
 
 SELECT 
     publisher_token,
@@ -227,8 +229,8 @@ druidq query_with_params.sql -v
 
 ```sql
 -- analysis.sql
--- params = {"threshold": "1000"}
--- eval-file = analyze.py
+-- @param threshold 1000
+-- @eval-file analyze.py
 
 SELECT * FROM metrics
 WHERE value > {{threshold}}

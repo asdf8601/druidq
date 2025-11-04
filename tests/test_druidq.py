@@ -102,42 +102,30 @@ class TestGetQuery:
 
 
 class TestExtractParamsFromQuery:
-    def test_extract_params_with_spaces(self):
-        query = '-- params = {"token": "7739-9592-01"}\nSELECT * FROM table'
+    def test_extract_single_param(self):
+        query = "-- @param token 7739-9592-01\nSELECT * FROM table"
         result = extract_params_from_query(query)
         assert result == {"token": "7739-9592-01"}
 
-    def test_extract_params_without_spaces(self):
-        query = '--params={"key":"value"}\nSELECT * FROM table'
+    def test_extract_multiple_params(self):
+        query = """-- @param token 7739-9592-01
+-- @param date 2025-01-01
+SELECT * FROM table"""
         result = extract_params_from_query(query)
-        assert result == {"key": "value"}
+        assert result == {"token": "7739-9592-01", "date": "2025-01-01"}
 
-    def test_extract_params_single_line_with_comment(self):
+    def test_extract_param_with_spaces_in_value(self):
+        query = (
+            "-- @param publisher_name The New York Times\nSELECT * FROM table"
+        )
+        result = extract_params_from_query(query)
+        assert result == {"publisher_name": "The New York Times"}
+
+    def test_extract_params_with_other_comments(self):
         query = """-- Some comment
--- params = {"a": "1", "b": "2"}
-SELECT * FROM table"""
-        result = extract_params_from_query(query)
-        assert result == {"a": "1", "b": "2"}
-
-    def test_extract_params_multiline(self):
-        query = """-- params = {
---   "token": "7739-9592-01",
---   "table": "my_table",
---   "threshold": "1000"
--- }
-SELECT * FROM table"""
-        result = extract_params_from_query(query)
-        assert result == {
-            "token": "7739-9592-01",
-            "table": "my_table",
-            "threshold": "1000",
-        }
-
-    def test_extract_params_multiline_compact(self):
-        query = """-- params = {
--- "a": "1",
--- "b": "2"
--- }
+-- @param a 1
+-- @param b 2
+-- Another comment
 SELECT * FROM table"""
         result = extract_params_from_query(query)
         assert result == {"a": "1", "b": "2"}
@@ -147,15 +135,15 @@ SELECT * FROM table"""
         result = extract_params_from_query(query)
         assert result is None
 
-    def test_invalid_json_returns_none(self):
-        query = "-- params = {invalid json}\nSELECT * FROM table"
+    def test_param_with_extra_spaces(self):
+        query = "--   @param   token   abc123  \nSELECT * FROM table"
         result = extract_params_from_query(query)
-        assert result is None
+        assert result == {"token": "abc123"}
 
 
 class TestParamsInQuery:
     def test_params_in_query(self):
-        query_str = '-- params = {"token": "7739-9592-01"}\nSELECT * FROM table WHERE publisher_token = \'{{token}}\''
+        query_str = "-- @param token 7739-9592-01\nSELECT * FROM table WHERE publisher_token = '{{token}}'"
         args = Mock(query=query_str, file=False)
         query, eval_inline, eval_file, params = get_query(args)
         assert "7739-9592-01" in query
@@ -163,7 +151,7 @@ class TestParamsInQuery:
         assert params == {"token": "7739-9592-01"}
 
     def test_params_priority_over_env(self):
-        query_str = '-- params = {"key": "from_params"}\nSELECT * FROM {{key}}'
+        query_str = "-- @param key from_params\nSELECT * FROM {{key}}"
         args = Mock(query=query_str, file=False)
         with patch.dict("os.environ", {"key": "from_env"}):
             query, eval_inline, eval_file, params = get_query(args)
@@ -171,7 +159,9 @@ class TestParamsInQuery:
             assert "from_env" not in query
 
     def test_params_in_eval_inline(self):
-        query_str = '-- params = {"token": "abc123"}\n-- eval = print(\'{{token}}\')\nSELECT 1'
+        query_str = (
+            "-- @param token abc123\n-- @eval print('{{token}}')\nSELECT 1"
+        )
         args = Mock(query=query_str, file=False)
         query, eval_inline, eval_file, params = get_query(args)
         assert eval_inline == "print('abc123')"
