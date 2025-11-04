@@ -170,7 +170,34 @@ def get_query(args):
 
 
 def get_args():
-    parser = argparse.ArgumentParser(description="Druid Query")
+    parser = argparse.ArgumentParser(
+        description="Druid Query CLI with SQL annotations support",
+        epilog="""
+SQL Annotations (use in query or file):
+  -- @param key value       Define parameter (supports spaces in value)
+  -- @eval code             Inline Python code (df variable available)
+  -- @eval-file script.py   Execute Python script from file
+
+Examples:
+  Query with parameters:
+    -- @param token 7739-9592-01
+    -- @param table my_table
+    SELECT * FROM {{table}} WHERE token = '{{token}}'
+
+  Query with inline evaluation:
+    -- @eval print(df.describe())
+    SELECT * FROM my_table LIMIT 100
+
+  Query with eval from file:
+    -- @eval-file analysis.py
+    SELECT * FROM my_table
+
+Priority:
+  CLI flags (--eval, --eval-file) override SQL annotations (@eval, @eval-file)
+  Parameters from @param override environment variables
+        """,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
     parser.add_argument("query", help="Druid query or filename")
     parser.add_argument(
         "-f",
