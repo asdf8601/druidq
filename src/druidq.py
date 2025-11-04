@@ -209,13 +209,16 @@ def get_query(args):
             else:
                 fmt_values[k] = os.environ[k]
 
-        # Replace {{key}} with {key} for Python format()
+        # Simple string replacement instead of format()
+        # to avoid issues with { } in SQL
         formatted_out = out
         for key in fmt_keys:
             k = key[2:-2]
-            formatted_out = formatted_out.replace(f"{{{{{k}}}}}", f"{{{k}}}")
+            formatted_out = formatted_out.replace(
+                f"{{{{{k}}}}}", fmt_values[k]
+            )
 
-        out = formatted_out.format(**fmt_values)
+        out = formatted_out
     # }}}
 
     # Apply params to eval code if present
