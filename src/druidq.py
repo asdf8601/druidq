@@ -31,6 +31,23 @@ def find_fmt_keys(s: str) -> list[str] | None:
     return matches
 
 
+def truncate_query(query: str, max_len: int = 50) -> str:
+    """Truncate query to max_len chars, replacing newlines with spaces
+
+    Args:
+        query: SQL query string
+        max_len: Maximum length of truncated query
+
+    Returns:
+        Truncated query with ellipsis if needed
+    """
+    # Replace newlines and multiple spaces with single space
+    cleaned = " ".join(query.split())
+    if len(cleaned) <= max_len:
+        return cleaned
+    return cleaned[:max_len] + "..."
+
+
 def extract_params_from_query(query: str) -> dict[str, str] | None:
     """Extract params from -- @param key value comments in SQL query
 
@@ -94,6 +111,7 @@ def get_query(args):
     query_in = args.query
 
     sql_file_path = None
+    query_source_filename = None  # Track filename if reading from file
 
     # Check if explicit file flag is set
     if hasattr(args, "file") and args.file:
@@ -101,6 +119,8 @@ def get_query(args):
         with open(query_in, "r") as f:
             out = f.read()
             sql_file_path = query_in
+            # Use just the filename (not full path) for notification
+            query_source_filename = os.path.basename(query_in)
     else:
         # Without -f flag, treat as SQL string only
         # Check if user accidentally passed a file path
@@ -168,7 +188,15 @@ def get_query(args):
         sql_dir = os.path.dirname(os.path.abspath(sql_file_path))
         eval_file = os.path.join(sql_dir, eval_file)
 
-    return out, eval_inline, eval_file, params
+    # Generate query_source for notifications
+    # For file queries: use filename; for inline: use truncated query
+    if query_source_filename:
+        query_source = query_source_filename
+    else:
+        # For inline queries, truncate cleaned query (after comment removal)
+        query_source = truncate_query(out)
+
+    return out, eval_inline, eval_file, params, query_source
 
 
 def get_args():
@@ -291,8 +319,20 @@ def get_temp_file(query):
     return temp_file
 
 
-def send_notification(title: str, message: str, show_time: bool = False):
-    """Send desktop notification using noti CLI tool if available"""
+def send_notification(
+    title: str,
+    message: str,
+    show_time: bool = False,
+    query_id: str | None = None,
+):
+    """Send desktop notification using noti CLI tool if available
+
+    Args:
+        title: Notification title
+        message: Notification message
+        show_time: Whether to show elapsed time in notification
+        query_id: Optional query identifier (filename or truncated query)
+    """
     if not shutil.which("noti"):
         printer(
             "Warning: noti command not found. "
@@ -300,6 +340,10 @@ def send_notification(title: str, message: str, show_time: bool = False):
             quiet=False,
         )
         return
+
+    # Prepend query_id to message if provided
+    if query_id:
+        message = f"{query_id} - {message}"
 
     cmd = ["noti", "-t", title, "-m", message]
     if show_time:
@@ -343,7 +387,9 @@ def app():
 
     args = get_args()
 
-    query, auto_eval_inline, auto_eval_file, params = get_query(args)
+    query, auto_eval_inline, auto_eval_file, params, query_source = get_query(
+        args
+    )
 
     if args.pdb:
         breakpoint()
@@ -425,7 +471,9 @@ def app():
         message = f"Query returned {rows} row{'s' if rows != 1 else ''}"
         if args.timing:
             message += f" in {elapsed:.3f}s"
-        send_notification(title, message, show_time=False)
+        send_notification(
+            title, message, show_time=False, query_id=query_source
+        )
 
 
 if __name__ == "__main__":

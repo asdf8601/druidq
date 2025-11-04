@@ -33,37 +33,41 @@ class TestFindFmtKeys:
 class TestGetQuery:
     def test_detect_sql_query_select(self):
         args = Mock(query="SELECT * FROM table", file=False)
-        query, eval_inline, eval_file, params = get_query(args)
+        query, eval_inline, eval_file, params, query_source = get_query(args)
         assert query == "SELECT * FROM table"
         assert eval_inline is None
         assert eval_file is None
         assert params is None
+        assert query_source == "SELECT * FROM table"
 
     def test_detect_sql_query_with(self):
         args = Mock(query="WITH cte AS (SELECT 1)", file=False)
-        query, eval_inline, eval_file, params = get_query(args)
+        query, eval_inline, eval_file, params, query_source = get_query(args)
         assert query == "WITH cte AS (SELECT 1)"
         assert eval_inline is None
         assert eval_file is None
         assert params is None
+        assert query_source == "WITH cte AS (SELECT 1)"
 
     def test_detect_multiline_query(self):
         query_str = "SELECT *\nFROM table\nWHERE id = 1"
         args = Mock(query=query_str, file=False)
-        query, eval_inline, eval_file, params = get_query(args)
+        query, eval_inline, eval_file, params, query_source = get_query(args)
         assert query == query_str
         assert eval_inline is None
         assert eval_file is None
         assert params is None
+        assert query_source == "SELECT * FROM table WHERE id = 1"
 
     @patch("builtins.open", mock_open(read_data="SELECT * FROM file"))
     def test_read_from_file(self):
         args = Mock(query="query.sql", file=True)
-        query, eval_inline, eval_file, params = get_query(args)
+        query, eval_inline, eval_file, params, query_source = get_query(args)
         assert query == "SELECT * FROM file"
         assert eval_inline is None
         assert eval_file is None
         assert params is None
+        assert query_source == "query.sql"
 
     def test_sql_file_without_flag_raises_error(self):
         # Test that passing a .sql file without -f flag raises helpful error
@@ -76,20 +80,23 @@ class TestGetQuery:
     @patch.dict("os.environ", {"table_name": "users"})
     def test_format_with_env_vars(self):
         args = Mock(query="SELECT * FROM {{table_name}}", file=False)
-        query, eval_inline, eval_file, params = get_query(args)
+        query, eval_inline, eval_file, params, query_source = get_query(args)
         assert query == "SELECT * FROM users"
         assert eval_inline is None
         assert eval_file is None
         assert params is None
+        # query_source uses the formatted query (after variable substitution)
+        assert query_source == "SELECT * FROM users"
 
     @patch("builtins.open", mock_open(read_data="SELECT * FROM explicit"))
     def test_explicit_file_flag(self):
         args = Mock(query="query.sql", file=True)
-        query, eval_inline, eval_file, params = get_query(args)
+        query, eval_inline, eval_file, params, query_source = get_query(args)
         assert query == "SELECT * FROM explicit"
         assert eval_inline is None
         assert eval_file is None
         assert params is None
+        assert query_source == "query.sql"
 
     @patch("builtins.open", side_effect=FileNotFoundError)
     def test_explicit_file_flag_raises_on_missing_file(self, mock_file):
@@ -145,27 +152,36 @@ class TestParamsInQuery:
     def test_params_in_query(self):
         query_str = "-- @param token 7739-9592-01\nSELECT * FROM table WHERE publisher_token = '{{token}}'"
         args = Mock(query=query_str, file=False)
-        query, eval_inline, eval_file, params = get_query(args)
+        query, eval_inline, eval_file, params, query_source = get_query(args)
         assert "7739-9592-01" in query
         assert "{{token}}" not in query
         assert params == {"token": "7739-9592-01"}
+        assert "SELECT * FROM table WHERE publisher_token" in query_source
 
     def test_params_priority_over_env(self):
         query_str = "-- @param key from_params\nSELECT * FROM {{key}}"
         args = Mock(query=query_str, file=False)
         with patch.dict("os.environ", {"key": "from_env"}):
-            query, eval_inline, eval_file, params = get_query(args)
+            (
+                query,
+                eval_inline,
+                eval_file,
+                params,
+                query_source,
+            ) = get_query(args)
             assert "from_params" in query
             assert "from_env" not in query
+            assert query_source is not None
 
     def test_params_in_eval_inline(self):
         query_str = (
             "-- @param token abc123\n-- @eval print('{{token}}')\nSELECT 1"
         )
         args = Mock(query=query_str, file=False)
-        query, eval_inline, eval_file, params = get_query(args)
+        query, eval_inline, eval_file, params, query_source = get_query(args)
         assert eval_inline == "print('abc123')"
         assert params == {"token": "abc123"}
+        assert query_source is not None
 
 
 class TestGetTempFile:

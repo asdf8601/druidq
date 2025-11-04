@@ -120,6 +120,11 @@ druidq -f ./query.sql --output parquet
 # Send desktop notification when query completes (requires noti)
 druidq -f ./query.sql --noti
 druidq -f ./query.sql --timing --noti  # Includes timing in notification
+
+# Notifications show query identifier:
+# - For file queries: "query.sql - Query returned 1234 rows"
+# - For inline queries: "SELECT * FROM table WHERE... - Query returned 1234 rows"
+druidq "SELECT * FROM large_table" --noti  # Shows truncated query in notification
 ```
 
 ## SQL Annotations
@@ -452,6 +457,7 @@ Options:
   --dry-run             Show rendered query without executing it
   -t, --timing          Show query execution time
   -o, --output FORMAT   Export format: json, csv, or parquet
+  --noti                Send desktop notification when query completes (requires noti)
   --pdb                 Run pdb on start
 ```
 
