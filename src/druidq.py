@@ -29,17 +29,33 @@ def find_fmt_keys(s: str) -> list[str] | None:
     return matches
 
 
-def extract_eval_from_query(query: str) -> str | None:
-    """Extract eval file from -- eval: comment in SQL query"""
+def extract_eval_from_query(query: str) -> tuple[str | None, str | None]:
+    """Extract eval code or file from -- eval: or -- eval-file: comments
+
+    Returns:
+        tuple[str | None, str | None]: (inline_code, file_path)
+    """
+    inline_code = None
+    file_path = None
+
     for line in query.split("\n"):
         line = line.strip()
-        # Handle variations: "-- eval:", "--eval:", "-- eval :"
-        if line.startswith("--") and "eval:" in line:
-            # Extract everything after "eval:"
-            eval_part = line.split("eval:", 1)[1].strip()
-            if eval_part:
-                return eval_part
-    return None
+
+        # Handle -- eval-file: path/to/file.py
+        if line.startswith("--") and "eval-file:" in line:
+            file_part = line.split("eval-file:", 1)[1].strip()
+            if file_part:
+                # Remove quotes if present
+                file_path = file_part.strip('"').strip("'")
+
+        # Handle -- eval: "code here" or -- eval: 'code here'
+        elif line.startswith("--") and "eval:" in line:
+            code_part = line.split("eval:", 1)[1].strip()
+            if code_part:
+                # Remove quotes if present
+                inline_code = code_part.strip('"').strip("'")
+
+    return inline_code, file_path
 
 
 def get_query(args):
@@ -74,6 +90,21 @@ def get_query(args):
             except (FileNotFoundError, IOError):
                 out = query_in
 
+    # Extract eval code/file from comment first (before formatting)
+    eval_inline, eval_file = extract_eval_from_query(out)
+
+    # Remove eval comments before formatting to avoid conflicts with {}
+    lines = []
+    for line in out.split("\n"):
+        line_stripped = line.strip()
+        # Skip eval comment lines
+        if line_stripped.startswith("--") and (
+            "eval:" in line_stripped or "eval-file:" in line_stripped
+        ):
+            continue
+        lines.append(line)
+    out = "\n".join(lines)
+
     # format {{{
     fmt_keys = find_fmt_keys(out)
     if fmt_keys:
@@ -84,15 +115,12 @@ def get_query(args):
         out = out.format(**fmt_values)
     # }}}
 
-    # Extract eval file from comment
-    eval_file = extract_eval_from_query(out)
-
     # Resolve relative eval paths relative to SQL file location
     if eval_file and sql_file_path and not os.path.isabs(eval_file):
         sql_dir = os.path.dirname(os.path.abspath(sql_file_path))
         eval_file = os.path.join(sql_dir, eval_file)
 
-    return out, eval_file
+    return out, eval_inline, eval_file
 
 
 def get_args():
@@ -106,8 +134,13 @@ def get_args():
     )
     parser.add_argument(
         "-e",
-        "--eval-df",
-        help="Evaluate 'df' using string or filename",
+        "--eval",
+        help="Evaluate 'df' using inline code",
+        default="",
+    )
+    parser.add_argument(
+        "--eval-file",
+        help="Evaluate 'df' using code from file",
         default="",
     )
     parser.add_argument(
@@ -137,18 +170,9 @@ def get_args():
 
 
 def get_eval_df_from_file(eval_file: str) -> str:
-    """Read eval code from file or return as-is if it's code"""
-    try:
-        with open(eval_file, "r") as f:
-            out = f.read()
-    except FileNotFoundError:
-        out = eval_file
-    return out
-
-
-def get_eval_df(args):
-    eval_df_in = args.eval_df
-    return get_eval_df_from_file(eval_df_in)
+    """Read eval code from file"""
+    with open(eval_file, "r") as f:
+        return f.read()
 
 
 def get_temp_file(query):
@@ -190,7 +214,7 @@ def execute(query, engine=None, no_cache=False, quiet=True):
 def app():
     args = get_args()
 
-    query, auto_eval_file = get_query(args)
+    query, auto_eval_inline, auto_eval_file = get_query(args)
 
     if args.pdb:
         breakpoint()
@@ -211,19 +235,28 @@ def app():
     if show_output:
         print(df)
 
-    # Priority: explicit --eval-df > auto-detected from SQL
-    eval_file_to_use = args.eval_df if args.eval_df else auto_eval_file
+    # Priority: CLI flags > auto-detected from SQL
+    # --eval > --eval-file > -- eval: "code" > -- eval-file: file.py
+    eval_code = None
 
-    if eval_file_to_use:
-        eval_df = (
-            get_eval_df(args)
-            if args.eval_df
-            else get_eval_df_from_file(eval_file_to_use)
-        )
+    if args.eval:
+        # Inline code from CLI flag
+        eval_code = args.eval
+    elif args.eval_file:
+        # File from CLI flag
+        eval_code = get_eval_df_from_file(args.eval_file)
+    elif auto_eval_inline:
+        # Inline code from SQL comment
+        eval_code = auto_eval_inline
+    elif auto_eval_file:
+        # File from SQL comment
+        eval_code = get_eval_df_from_file(auto_eval_file)
+
+    if eval_code:
         if show_eval_input:
-            print(f"\nIn[eval]:\n{eval_df}")
+            print(f"\nIn[eval]:\n{eval_code}")
 
-        exec(eval_df, globals(), locals())
+        exec(eval_code, globals(), locals())
 
 
 if __name__ == "__main__":
