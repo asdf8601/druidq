@@ -42,9 +42,9 @@ uv pip install -e .
 # Query string (shows only output by default)
 druidq "select 1"
 
-# Query from file (auto-detected)
-druidq ./query.sql
-druidq query.sql
+# Query from file (requires -f flag)
+druidq -f ./query.sql
+druidq -f query.sql
 
 # Verbose mode (show input and output)
 druidq "select 1" -v
@@ -63,19 +63,19 @@ druidq "select 1" --eval-file script.py
 druidq "select 1" --no-cache
 
 # Custom Druid URL
-DRUIDQ_URL='druid://localhost:8887/' druidq ./query.sql
-DRUIDQ_URL='druid://localhost:8082/druid/v2/sql/' druidq ./query.sql
+DRUIDQ_URL='druid://localhost:8887/' druidq -f ./query.sql
+DRUIDQ_URL='druid://localhost:8082/druid/v2/sql/' druidq -f ./query.sql
 
 # Dry-run to see rendered query without executing
-druidq ./query.sql --dry-run
+druidq -f ./query.sql --dry-run
 
 # Show execution time
-druidq ./query.sql --timing
+druidq -f ./query.sql --timing
 
 # Export to different formats
-druidq ./query.sql --output json
-druidq ./query.sql --output csv
-druidq ./query.sql --output parquet
+druidq -f ./query.sql --output json
+druidq -f ./query.sql --output csv
+druidq -f ./query.sql --output parquet
 ```
 
 ## Environment Variables
@@ -93,10 +93,10 @@ echo "select 1" > query.sql
 export DRUIDQ_URL='druid://localhost:8887/'
 
 # Read query from file
-druidq ./query.sql
+druidq -f ./query.sql
 
 # With Python evaluation
-druidq ./query.sql -e "print(df.shape)"
+druidq -f ./query.sql -e "print(df.shape)"
 ```
 
 ### Using Python Scripts
@@ -105,10 +105,10 @@ druidq ./query.sql -e "print(df.shape)"
 # Use Python scripts for evaluation
 echo "print(df.shape)" > script.py
 echo "print(df.T)" >> script.py
-druidq ./query.sql --eval-file script.py
+druidq -f ./query.sql --eval-file script.py
 
 # Quiet mode with eval
-druidq ./query.sql -q --eval "print(df.describe())"
+druidq -f ./query.sql -q --eval "print(df.describe())"
 ```
 
 ### Auto-detect Eval from SQL Comments
@@ -133,11 +133,11 @@ WHERE __time >= CURRENT_TIMESTAMP - INTERVAL '7' DAY
 
 ```bash
 # The eval code/file is automatically detected from the SQL comment
-druidq ./query.sql
+druidq -f ./query.sql
 
 # Explicit flags take priority over comments
-druidq ./query.sql --eval "print(df.shape)"
-druidq ./query.sql --eval-file other_script.py
+druidq -f ./query.sql --eval "print(df.shape)"
+druidq -f ./query.sql --eval-file other_script.py
 ```
 
 **Priority order:**
@@ -185,7 +185,7 @@ WHERE __time >= '{{START_DATE}}'
 ```bash
 export START_DATE="2025-01-01"
 export END_DATE="2025-01-31"
-druidq ./query.sql
+druidq -f ./query.sql
 ```
 
 ## Programmatic Usage
@@ -233,7 +233,7 @@ GROUP BY publisher_token
 
 ```bash
 # Run with all features enabled
-druidq query_with_params.sql -v
+druidq -f query_with_params.sql -v
 ```
 
 ### Complex Eval Processing
@@ -264,14 +264,14 @@ print('Saved plot to metrics_distribution.png')
 
 ```bash
 # Preview rendered query before execution
-druidq query.sql --dry-run
+druidq -f query.sql --dry-run
 
 # Measure query performance
-druidq query.sql --timing
+druidq -f query.sql --timing
 
 # Export results for further processing
-druidq query.sql --output json > results.json
-druidq query.sql --output csv | head -10
+druidq -f query.sql --output json > results.json
+druidq -f query.sql --output csv | head -10
 ```
 
 ### Pipeline Integration
@@ -283,7 +283,7 @@ druidq "SELECT * FROM events LIMIT 100" --output csv | \
   sort | uniq -c
 
 # Save query results as parquet for later analysis
-druidq large_query.sql --output parquet --timing
+druidq -f large_query.sql --output parquet --timing
 # Output: Execution time: 2.347s
 #         Exported to output.parquet
 ```
@@ -327,11 +327,11 @@ druidq [-h] [-f] [--eval EVAL] [--eval-file EVAL_FILE]
        [-n] [-v] [-q] [--pdb] query
 
 Arguments:
-  query                 Druid query or filename
+  query                 SQL query string (use -f to read from file)
 
 Options:
   -h, --help            Show help message
-  -f, --file            Read query from file (explicit file mode)
+  -f, --file            Read query from file (required for file input)
   --eval EVAL           Evaluate 'df' using inline code
   --eval-file FILE      Evaluate 'df' using code from file
   -n, --no-cache        Do not use cache

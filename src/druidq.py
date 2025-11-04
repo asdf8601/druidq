@@ -100,25 +100,14 @@ def get_query(args):
             out = f.read()
             sql_file_path = query_in
     else:
-        # Auto-detect mode (backward compatible)
-        # Detect if it's a SQL query
-        is_query = (
-            query_in.strip()
-            .upper()
-            .startswith(("SELECT", "WITH", "INSERT", "UPDATE", "DELETE"))
-            or "\n" in query_in.strip()
-        )
-
-        if is_query:
-            out = query_in
-        else:
-            # Try to read as file
-            try:
-                with open(query_in, "r") as f:
-                    out = f.read()
-                    sql_file_path = query_in
-            except (FileNotFoundError, IOError):
-                out = query_in
+        # Without -f flag, treat as SQL string only
+        # Check if user accidentally passed a file path
+        if os.path.exists(query_in) or query_in.endswith(".sql"):
+            raise ValueError(
+                f"'{query_in}' looks like a file path. "
+                f"Use -f flag to read from file: druidq -f {query_in}"
+            )
+        out = query_in
 
     # Extract params from comment first
     params = extract_params_from_query(out)

@@ -1,6 +1,7 @@
 from unittest.mock import Mock, mock_open, patch
 
 import pandas as pd
+import pytest
 
 from src.druidq import (
     execute,
@@ -57,21 +58,20 @@ class TestGetQuery:
 
     @patch("builtins.open", mock_open(read_data="SELECT * FROM file"))
     def test_read_from_file(self):
-        args = Mock(query="query.sql", file=False)
+        args = Mock(query="query.sql", file=True)
         query, eval_inline, eval_file, params = get_query(args)
         assert query == "SELECT * FROM file"
         assert eval_inline is None
         assert eval_file is None
         assert params is None
 
-    @patch("builtins.open", side_effect=FileNotFoundError)
-    def test_file_not_found_fallback(self, mock_file):
-        args = Mock(query="nonexistent.sql", file=False)
-        query, eval_inline, eval_file, params = get_query(args)
-        assert query == "nonexistent.sql"
-        assert eval_inline is None
-        assert eval_file is None
-        assert params is None
+    def test_sql_file_without_flag_raises_error(self):
+        # Test that passing a .sql file without -f flag raises helpful error
+        args = Mock(query="query.sql", file=False)
+        with pytest.raises(ValueError) as exc_info:
+            get_query(args)
+        assert "looks like a file path" in str(exc_info.value)
+        assert "Use -f flag" in str(exc_info.value)
 
     @patch.dict("os.environ", {"table_name": "users"})
     def test_format_with_env_vars(self):
