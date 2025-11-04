@@ -1,6 +1,12 @@
 #!/usr/bin/env python
 """Demo script to show params functionality with new @param syntax"""
 
+import sys
+from pathlib import Path
+
+# Add parent directory to path to import druidq
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
 from unittest.mock import Mock
 from src.druidq import get_query
 
