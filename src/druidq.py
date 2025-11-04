@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import re
 import warnings
@@ -24,13 +25,92 @@ def printer(*args, quiet=False, **kwargs):
 
 
 def find_fmt_keys(s: str) -> list[str] | None:
-    pattern = r"{[^}]+}"
+    pattern = r"{{[^}]+}}"
     matches = re.findall(pattern, s)
     return matches
 
 
+def extract_params_from_query(query: str) -> dict[str, str] | None:
+    """Extract params dict from -- params = {...} comment in SQL query
+
+    Supports both single-line and multi-line format:
+    -- params = {"key": "value"}
+
+    Or:
+    -- params = {
+    --   "key": "value",
+    --   "other": "data"
+    -- }
+
+    Returns:
+        dict[str, str] | None: Dictionary of parameters or None if not found
+    """
+    lines = query.split("\n")
+    json_parts = []
+    in_params = False
+
+    for line in lines:
+        line_stripped = line.strip()
+
+        # Start of params block
+        if (
+            line_stripped.startswith("--")
+            and "params" in line_stripped
+            and "=" in line_stripped
+        ):
+            in_params = True
+            # Extract everything after "params ="
+            params_part = line_stripped.split("params", 1)[1].strip()
+            if params_part.startswith("="):
+                params_part = params_part[1:].strip()
+                # Remove leading -- if present
+                if params_part.startswith("--"):
+                    params_part = params_part[2:].strip()
+                json_parts.append(params_part)
+
+                # Try to parse immediately (single-line case)
+                try:
+                    return json.loads(params_part)
+                except json.JSONDecodeError:
+                    # Multi-line, continue collecting
+                    continue
+
+        # Continue collecting multi-line params
+        elif in_params and line_stripped.startswith("--"):
+            # Remove the comment prefix
+            content = line_stripped[2:].strip()
+            json_parts.append(content)
+
+            # Check if we have a complete JSON
+            combined = " ".join(json_parts)
+            try:
+                return json.loads(combined)
+            except json.JSONDecodeError:
+                # Not complete yet, continue
+                continue
+
+        # End of params block (non-comment line or comment without --)
+        elif in_params:
+            # Try one final parse
+            combined = " ".join(json_parts)
+            try:
+                return json.loads(combined)
+            except json.JSONDecodeError:
+                return None
+
+    # End of query, try final parse
+    if json_parts:
+        combined = " ".join(json_parts)
+        try:
+            return json.loads(combined)
+        except json.JSONDecodeError:
+            pass
+
+    return None
+
+
 def extract_eval_from_query(query: str) -> tuple[str | None, str | None]:
-    """Extract eval code or file from -- eval: or -- eval-file: comments
+    """Extract eval code or file from -- eval = or -- eval-file = comments
 
     Returns:
         tuple[str | None, str | None]: (inline_code, file_path)
@@ -41,17 +121,24 @@ def extract_eval_from_query(query: str) -> tuple[str | None, str | None]:
     for line in query.split("\n"):
         line = line.strip()
 
-        # Handle -- eval-file: path/to/file.py
-        if line.startswith("--") and "eval-file:" in line:
-            file_part = line.split("eval-file:", 1)[1].strip()
-            if file_part:
+        # Handle -- eval-file = path/to/file.py
+        if line.startswith("--") and "eval-file" in line and "=" in line:
+            file_part = line.split("eval-file", 1)[1].strip()
+            if file_part.startswith("="):
+                file_part = file_part[1:].strip()
                 # Remove quotes if present
                 file_path = file_part.strip('"').strip("'")
 
-        # Handle -- eval: "code here" or -- eval: 'code here'
-        elif line.startswith("--") and "eval:" in line:
-            code_part = line.split("eval:", 1)[1].strip()
-            if code_part:
+        # Handle -- eval = "code here" or -- eval = 'code here'
+        elif (
+            line.startswith("--")
+            and "eval" in line
+            and "=" in line
+            and "eval-file" not in line
+        ):
+            code_part = line.split("eval", 1)[1].strip()
+            if code_part.startswith("="):
+                code_part = code_part[1:].strip()
                 # Remove quotes if present
                 inline_code = code_part.strip('"').strip("'")
 
@@ -90,16 +177,20 @@ def get_query(args):
             except (FileNotFoundError, IOError):
                 out = query_in
 
+    # Extract params from comment first
+    params = extract_params_from_query(out)
+
     # Extract eval code/file from comment first (before formatting)
     eval_inline, eval_file = extract_eval_from_query(out)
 
-    # Remove eval comments before formatting to avoid conflicts with {}
+    # Remove special comments before formatting to avoid conflicts with {{}}
     lines = []
     for line in out.split("\n"):
         line_stripped = line.strip()
-        # Skip eval comment lines
+        # Skip eval and params comment lines
         if line_stripped.startswith("--") and (
-            "eval:" in line_stripped or "eval-file:" in line_stripped
+            ("eval" in line_stripped and "=" in line_stripped)
+            or ("params" in line_stripped and "=" in line_stripped)
         ):
             continue
         lines.append(line)
@@ -110,17 +201,36 @@ def get_query(args):
     if fmt_keys:
         fmt_values = {}
         for key in fmt_keys:
-            k = key[1:-1]
-            fmt_values[k] = os.environ[k]
-        out = out.format(**fmt_values)
+            # Remove {{ and }} from key
+            k = key[2:-2]
+            # Priority: params from comment > environment variables
+            if params and k in params:
+                fmt_values[k] = params[k]
+            else:
+                fmt_values[k] = os.environ[k]
+
+        # Replace {{key}} with {key} for Python format()
+        formatted_out = out
+        for key in fmt_keys:
+            k = key[2:-2]
+            formatted_out = formatted_out.replace(f"{{{{{k}}}}}", f"{{{k}}}")
+
+        out = formatted_out.format(**fmt_values)
     # }}}
+
+    # Apply params to eval code if present
+    if params:
+        if eval_inline:
+            for key, value in params.items():
+                eval_inline = eval_inline.replace(f"{{{{{key}}}}}", value)
+        # Note: eval_file content will be formatted later when read
 
     # Resolve relative eval paths relative to SQL file location
     if eval_file and sql_file_path and not os.path.isabs(eval_file):
         sql_dir = os.path.dirname(os.path.abspath(sql_file_path))
         eval_file = os.path.join(sql_dir, eval_file)
 
-    return out, eval_inline, eval_file
+    return out, eval_inline, eval_file, params
 
 
 def get_args():
@@ -169,10 +279,19 @@ def get_args():
     return parser.parse_args()
 
 
-def get_eval_df_from_file(eval_file: str) -> str:
-    """Read eval code from file"""
+def get_eval_df_from_file(
+    eval_file: str, params: dict[str, str] | None = None
+) -> str:
+    """Read eval code from file and apply params if provided"""
     with open(eval_file, "r") as f:
-        return f.read()
+        code = f.read()
+
+    # Apply params to eval code if present
+    if params:
+        for key, value in params.items():
+            code = code.replace(f"{{{{{key}}}}}", value)
+
+    return code
 
 
 def get_temp_file(query):
@@ -214,7 +333,7 @@ def execute(query, engine=None, no_cache=False, quiet=True):
 def app():
     args = get_args()
 
-    query, auto_eval_inline, auto_eval_file = get_query(args)
+    query, auto_eval_inline, auto_eval_file, params = get_query(args)
 
     if args.pdb:
         breakpoint()
@@ -242,15 +361,19 @@ def app():
     if args.eval:
         # Inline code from CLI flag
         eval_code = args.eval
+        # Apply params if present
+        if params:
+            for key, value in params.items():
+                eval_code = eval_code.replace(f"{{{{{key}}}}}", value)
     elif args.eval_file:
         # File from CLI flag
-        eval_code = get_eval_df_from_file(args.eval_file)
+        eval_code = get_eval_df_from_file(args.eval_file, params)
     elif auto_eval_inline:
-        # Inline code from SQL comment
+        # Inline code from SQL comment (already has params applied)
         eval_code = auto_eval_inline
     elif auto_eval_file:
         # File from SQL comment
-        eval_code = get_eval_df_from_file(auto_eval_file)
+        eval_code = get_eval_df_from_file(auto_eval_file, params)
 
     if eval_code:
         if show_eval_input:
