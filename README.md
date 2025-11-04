@@ -46,6 +46,12 @@ Simple Druid CLI to query Apache Druid using SQLAlchemy with caching support and
 uv tool install git+https://github.com/mmngreco/druidq
 ```
 
+### With plotting support (includes plotly-express)
+
+```bash
+uv tool install --with plotly-express git+https://github.com/mmngreco/druidq
+```
+
 ### Alternative: Install from source
 
 ```bash
