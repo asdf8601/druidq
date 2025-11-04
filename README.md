@@ -11,6 +11,27 @@ Simple Druid CLI to query Apache Druid using SQLAlchemy with caching support and
 - Environment variable templating in queries
 - Inline and file-based Python evaluation
 - Verbose and quiet modes for different use cases
+- Export results to JSON, CSV, or Parquet formats
+- Dry-run mode to preview queries before execution
+- Query execution timing
+
+## Table of Contents
+
+- [Requirements](#requirements)
+- [Installation](#installation)
+- [Usage](#usage)
+- [SQL Annotations](#sql-annotations)
+  - [@param - Query Parameters](#param---query-parameters)
+  - [@eval - Inline Python Evaluation](#eval---inline-python-evaluation)
+  - [@eval-file - External Python Script](#eval-file---external-python-script)
+  - [Combining Annotations](#combining-annotations)
+  - [Priority Rules](#priority-rules)
+- [Environment Variables](#environment-variables)
+- [Examples](#examples)
+- [Programmatic Usage](#programmatic-usage)
+- [Caching](#caching)
+- [Command Line Reference](#command-line-reference)
+- [Development](#development)
 
 ## Requirements
 
@@ -78,6 +99,132 @@ druidq -f ./query.sql --output csv
 druidq -f ./query.sql --output parquet
 ```
 
+## SQL Annotations
+
+DruidQ supports special SQL comments (annotations) that allow you to embed configuration directly in your SQL files. All annotations must be placed at the beginning of the file as SQL comments starting with `-- @`.
+
+### Available Annotations
+
+#### `@param` - Query Parameters
+
+Define parameters that can be used throughout your SQL query and eval code using `{{variable}}` syntax:
+
+```sql
+-- @param token ABC123
+-- @param days 7
+-- @param table_name events
+
+SELECT * FROM {{table_name}}
+WHERE publisher_token = '{{token}}'
+  AND __time >= CURRENT_TIMESTAMP - INTERVAL '{{days}}' DAY
+```
+
+**Features:**
+- Multiple parameters supported (one per line)
+- Format: `-- @param key value` (value is everything after the key)
+- Parameters override environment variables with the same name
+- Available in: SQL queries, `@eval` code, and `@eval-file` scripts
+- Use `{{variable}}` syntax (double braces) to reference parameters
+
+#### `@eval` - Inline Python Evaluation
+
+Execute Python code after the query runs. The DataFrame is available as `df`:
+
+```sql
+-- @eval print(f'Total rows: {len(df)}'); print(df.describe())
+
+SELECT * FROM datasource
+WHERE __time >= CURRENT_TIMESTAMP - INTERVAL '7' DAY
+```
+
+**Features:**
+- Direct access to query results via `df` variable (pandas DataFrame)
+- Can use parameters with `{{variable}}` syntax
+- Supports multiple statements separated by semicolons
+- CLI `--eval` flag takes priority over `@eval` annotation
+
+#### `@eval-file` - External Python Script
+
+Reference an external Python file for more complex data processing:
+
+```sql
+-- @eval-file analysis.py
+
+SELECT * FROM datasource
+WHERE __time >= CURRENT_TIMESTAMP - INTERVAL '7' DAY
+```
+
+```python
+# analysis.py
+import matplotlib.pyplot as plt
+
+print(f'Processing {len(df)} records')
+print(df.describe())
+
+# Parameters are available via {{variable}} syntax
+print('Table name: {{table_name}}')
+
+# Create visualization
+df['value'].hist(bins=50)
+plt.savefig('output.png')
+```
+
+**Features:**
+- Python file relative to working directory or absolute path
+- Full access to `df` variable and all pandas/Python features
+- Can use parameters with `{{variable}}` syntax
+- CLI `--eval-file` flag takes priority over `@eval-file` annotation
+
+### Combining Annotations
+
+All annotations can be combined in a single SQL file:
+
+```sql
+-- @param publisher_id ABC123
+-- @param days 30
+-- @param min_revenue 1000
+-- @eval print(f'Analyzing publisher: {{publisher_id}}'); print(f'Total revenue: ${df["total_revenue"].sum():,.2f}')
+
+SELECT 
+    publisher_token,
+    COUNT(*) as impressions,
+    SUM(revenue) as total_revenue
+FROM ad_events
+WHERE publisher_token = '{{publisher_id}}'
+  AND __time >= CURRENT_TIMESTAMP - INTERVAL '{{days}}' DAY
+GROUP BY publisher_token
+HAVING SUM(revenue) > {{min_revenue}}
+```
+
+Run with:
+```bash
+druidq -f query.sql              # Uses all annotations
+druidq -f query.sql -v           # Verbose output
+druidq -f query.sql --dry-run    # Preview rendered query
+```
+
+### Priority Rules
+
+When the same configuration is specified in multiple places, DruidQ follows this priority order:
+
+**For evaluation code:**
+1. `--eval` CLI flag (highest priority)
+2. `--eval-file` CLI flag
+3. `-- @eval` annotation in SQL file
+4. `-- @eval-file` annotation in SQL file (lowest priority)
+
+**For parameters:**
+1. `-- @param` annotations in SQL file (highest priority)
+2. Environment variables (lowest priority)
+
+### Benefits of Annotations
+
+- **Self-contained files:** Query and processing logic stored together
+- **Portable:** Share SQL files with embedded configuration
+- **Version control friendly:** Track parameters and eval code with queries
+- **No external files needed:** Everything in one place
+- **Flexible:** CLI flags can still override annotations when needed
+
 ## Environment Variables
 
 - `DRUIDQ_URL`: Druid connection URL (default: `druid://localhost:8887/`)
@@ -111,69 +258,9 @@ druidq -f ./query.sql --eval-file script.py
 druidq -f ./query.sql -q --eval "print(df.describe())"
 ```
 
-### Auto-detect Eval from SQL Comments
+### Using Environment Variables
 
-You can specify the evaluation code or script directly in your SQL file using comments. This allows you to store the query and its processing logic together:
-
-#### Inline evaluation code
-
-```sql
--- @eval print(df.head())
-SELECT * FROM datasource 
-WHERE __time >= CURRENT_TIMESTAMP - INTERVAL '7' DAY
-```
-
-#### External evaluation file
-
-```sql
--- @eval-file script.py
-SELECT * FROM datasource 
-WHERE __time >= CURRENT_TIMESTAMP - INTERVAL '7' DAY
-```
-
-```bash
-# The eval code/file is automatically detected from the SQL comment
-druidq -f ./query.sql
-
-# Explicit flags take priority over comments
-druidq -f ./query.sql --eval "print(df.shape)"
-druidq -f ./query.sql --eval-file other_script.py
-```
-
-**Priority order:**
-1. `--eval` flag (inline code)
-2. `--eval-file` flag (file)
-3. `-- @eval` comment (inline code)
-4. `-- @eval-file` comment (file)
-
-**Benefits:**
-- No need to remember which eval script goes with which query
-- Query files are self-contained and portable
-- Explicit flags still work and take priority
-
-### Template Queries with Parameters
-
-You can define parameters directly in your SQL file and use them in both queries and eval code:
-
-```sql
--- @param token 7739-9592-01
--- @param table my_table
--- @eval print('Processing token: {{token}}')
-
-SELECT * FROM {{table}}
-WHERE publisher_token = '{{token}}'
-  AND __time >= CURRENT_TIMESTAMP - INTERVAL '7' DAY
-```
-
-Parameters use `{{variable}}` syntax (double braces) and work in:
-- SQL queries
-- Inline eval code (`-- @eval`)
-- External eval files (`-- @eval-file`)
-- CLI eval flags (`--eval` and `--eval-file`)
-
-**Priority:** Parameters defined with `-- @param` take precedence over environment variables.
-
-### Template Queries with Environment Variables
+You can use environment variables for templating in your queries:
 
 ```sql
 -- query.sql
@@ -210,6 +297,8 @@ df = execute("select 1", no_cache=True)
 Queries are automatically cached in `/tmp/druidq/` using SHA1 hash of the query string as filename. Use `--no-cache` flag to bypass cache and force a fresh query.
 
 ## Advanced Examples
+
+> **Note:** These examples use [SQL Annotations](#sql-annotations) (`@param`, `@eval`, `@eval-file`). See the [SQL Annotations section](#sql-annotations) for detailed documentation.
 
 ### Complete Example: Parameters + Eval
 
@@ -324,7 +413,7 @@ make clean
 
 ```
 druidq [-h] [-f] [--eval EVAL] [--eval-file EVAL_FILE] 
-       [-n] [-v] [-q] [--pdb] query
+       [-n] [-v] [-q] [--dry-run] [-t] [-o FORMAT] [--pdb] query
 
 Arguments:
   query                 SQL query string (use -f to read from file)
@@ -332,8 +421,8 @@ Arguments:
 Options:
   -h, --help            Show help message
   -f, --file            Read query from file (required for file input)
-  --eval EVAL           Evaluate 'df' using inline code
-  --eval-file FILE      Evaluate 'df' using code from file
+  --eval EVAL           Evaluate 'df' using inline code (overrides @eval annotation)
+  --eval-file FILE      Evaluate 'df' using code from file (overrides @eval-file annotation)
   -n, --no-cache        Do not use cache
   -v, --verbose         Show input and output (query and result)
   -q, --quiet           Suppress all output except explicit prints in eval
@@ -342,3 +431,15 @@ Options:
   -o, --output FORMAT   Export format: json, csv, or parquet
   --pdb                 Run pdb on start
 ```
+
+### SQL File Annotations
+
+When using `-f` flag, you can embed configuration in SQL files using comment annotations:
+
+```sql
+-- @param key value          Define parameter (available as {{key}})
+-- @eval python_code         Execute Python code after query
+-- @eval-file script.py      Run Python script after query
+```
+
+See [SQL Annotations](#sql-annotations) for complete documentation.
