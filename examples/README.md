@@ -1,11 +1,5 @@
-# Tests and Demo Files
+# Demo Files
 
-This directory contains both unit tests and demo files for DruidQ.
-
-## Unit Tests
-
-- **`test_druidq.py`** - Main test suite with 27 unit tests covering core functionality
-  - Run with: `make test` or `pytest tests/test_druidq.py`
 
 ## Demo Files
 
@@ -31,7 +25,7 @@ These files demonstrate DruidQ features and can be used for manual testing witho
   - References external Python script for evaluation
   - Use with: `druidq -f tests/demo_params_file.sql --dry-run`
 
-- **`demo_eval.py`** - External evaluation script used by `demo_params_file.sql`
+- **`demo_params_file.py`** - External evaluation script used by `demo_params_file.sql`
   - Demonstrates accessing `df` DataFrame and parameters
   - Shows template variable syntax `{{variable}}`
 
