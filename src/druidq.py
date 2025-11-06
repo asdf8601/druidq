@@ -210,7 +210,7 @@ SQL Annotations (use in query or file):
 
 Examples:
   Query with parameters:
-    -- @param token 7739-9592-01
+    -- @param token 1111-1111-01
     -- @param table my_table
     SELECT * FROM {{table}} WHERE token = '{{token}}'
 

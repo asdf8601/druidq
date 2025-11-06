@@ -110,16 +110,16 @@ class TestGetQuery:
 
 class TestExtractParamsFromQuery:
     def test_extract_single_param(self):
-        query = "-- @param token 7739-9592-01\nSELECT * FROM table"
+        query = "-- @param token 1111-1111-01\nSELECT * FROM table"
         result = extract_params_from_query(query)
-        assert result == {"token": "7739-9592-01"}
+        assert result == {"token": "1111-1111-01"}
 
     def test_extract_multiple_params(self):
-        query = """-- @param token 7739-9592-01
+        query = """-- @param token 1111-1111-01
 -- @param date 2025-01-01
 SELECT * FROM table"""
         result = extract_params_from_query(query)
-        assert result == {"token": "7739-9592-01", "date": "2025-01-01"}
+        assert result == {"token": "1111-1111-01", "date": "2025-01-01"}
 
     def test_extract_param_with_spaces_in_value(self):
         query = (
@@ -150,12 +150,12 @@ SELECT * FROM table"""
 
 class TestParamsInQuery:
     def test_params_in_query(self):
-        query_str = "-- @param token 7739-9592-01\nSELECT * FROM table WHERE publisher_token = '{{token}}'"
+        query_str = "-- @param token 1111-1111-01\nSELECT * FROM table WHERE publisher_token = '{{token}}'"
         args = Mock(query=query_str, file=False)
         query, eval_inline, eval_file, params, query_source = get_query(args)
-        assert "7739-9592-01" in query
+        assert "1111-1111-01" in query
         assert "{{token}}" not in query
-        assert params == {"token": "7739-9592-01"}
+        assert params == {"token": "1111-1111-01"}
         assert "SELECT * FROM table WHERE publisher_token" in query_source
 
     def test_params_priority_over_env(self):

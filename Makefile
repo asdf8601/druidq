@@ -32,6 +32,11 @@ dev: sync ## install dev mode
 test:  ## run tests
 	$(pytest) tests
 
+.PHONY: demo
+demo: ## run demos
+	$(uv) run druidq -f examples/demo_params_file.sql
+	$(uv) run druidq -f examples/demo_params.sql
+
 .PHONY: lint
 lint:  ## run linting and type checking
 	$(ruff) check ./src
