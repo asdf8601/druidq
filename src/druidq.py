@@ -338,9 +338,12 @@ def get_eval_df_from_file(
     return code
 
 
+DRUIDQ_CACHE_DIR = os.environ.get("DRUIDQ_CACHE_DIR", "/tmp/druidq")
+
+
 def get_temp_file(query):
     qhash = sha1(query.encode()).hexdigest()
-    temp_file = Path(f"/tmp/druidq/{qhash}.parquet")
+    temp_file = Path(DRUIDQ_CACHE_DIR) / f"{qhash}.parquet"
     if not temp_file.parent.exists():
         temp_file.parent.mkdir(parents=True, exist_ok=True)
 
