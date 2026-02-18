@@ -7,6 +7,7 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 import warnings
 from hashlib import sha1
 from pathlib import Path
@@ -360,12 +361,66 @@ def send_notification(
         printer(f"Warning: Failed to send notification: {e}", quiet=False)
 
 
+def extract_error_message(error: Exception) -> str:
+    """Extract clean error message from database exceptions
+
+    Args:
+        error: Exception object
+
+    Returns:
+        Clean error message string
+    """
+    error_str = str(error)
+
+    # Check the original exception in the chain
+    original_error = error
+    while original_error.__cause__ is not None:
+        original_error = original_error.__cause__
+        error_str = str(original_error) + "\n" + error_str
+
+    # Extract Druid-specific error messages
+    # Pattern 1: Object not found
+    match = re.search(r"Object '([^']+)' not found", error_str)
+    if match:
+        return f"Table or column '{match.group(1)}' not found"
+
+    # Pattern 2: Failed to check missing segments
+    if "Failed to check missing segments" in error_str:
+        return (
+            "Failed to check missing segments. "
+            "Some Druid servers are not responding. "
+            "Check cluster health."
+        )
+
+    # Pattern 3: Unknown exception with message
+    match = re.search(r"Unknown exception \([^)]+\): (.+?)(?:\n|$)", error_str)
+    if match:
+        return match.group(1)
+
+    # Pattern 4: Plan validation failed
+    match = re.search(r"Plan validation failed[^:]*: (.+?)(?:\n|$)", error_str)
+    if match:
+        return f"Plan validation failed: {match.group(1)}"
+
+    # Pattern 5: ProgrammingError with description
+    match = re.search(r"ProgrammingError: (.+?)(?:\n|$)", error_str)
+    if match:
+        return match.group(1)
+
+    # Return first line of error message if no specific pattern found
+    first_line = str(error).split("\n")[0]
+    return first_line
+
+
 def execute(query, engine=None, no_cache=False, quiet=True):
     if engine is None:
         engine = create_engine(DRUIDQ_URL)
 
     if no_cache:
-        return pd.read_sql(query, engine.raw_connection())
+        try:
+            return pd.read_sql(query, engine.raw_connection())
+        except Exception as e:
+            raise RuntimeError(extract_error_message(e)) from e
 
     # cache {{
     temp_file = get_temp_file(query)
@@ -374,7 +429,10 @@ def execute(query, engine=None, no_cache=False, quiet=True):
         return pd.read_parquet(temp_file)
     # }}
 
-    df = pd.read_sql(query, engine.raw_connection())
+    try:
+        df = pd.read_sql(query, engine.raw_connection())
+    except Exception as e:
+        raise RuntimeError(extract_error_message(e)) from e
 
     # cache {{
     printer(f"Saving cache: {temp_file}", quiet=quiet)
@@ -448,7 +506,21 @@ def app():
 
     # Execute query with optional timing
     start_time = time.time() if (args.timing or args.noti) else 0.0
-    df = execute(query=query, no_cache=args.no_cache, quiet=cache_quiet)
+    try:
+        df = execute(query=query, no_cache=args.no_cache, quiet=cache_quiet)
+    except RuntimeError as e:
+        # Clean error message from extract_error_message()
+        # No traceback for controlled errors
+        print(f"Error: {e}", file=sys.stderr)
+        return 1
+    except Exception as e:
+        # Unexpected/uncontrolled error - always show full traceback
+        print(f"Unexpected error: {e}", file=sys.stderr)
+        import traceback
+
+        traceback.print_exc()
+        return 1
+
     elapsed = 0.0
     if args.timing or args.noti:
         elapsed = time.time() - start_time
