@@ -8,6 +8,7 @@ import re
 import shutil
 import subprocess
 import sys
+import time
 import warnings
 from hashlib import sha1
 from pathlib import Path
@@ -222,6 +223,10 @@ Examples:
     -- @eval-file analysis.py
     SELECT * FROM my_table
 
+  Retry with exponential backoff:
+    druidq --retry 3 --backoff 1.5 -f query.sql
+    (Retries up to 3 times with exponential backoff starting at 1.5s)
+
 Priority:
   CLI flags (--eval, --eval-file) override SQL annotations (@eval, @eval-file)
   Parameters from @param override environment variables
@@ -298,6 +303,23 @@ Priority:
         help="Only print query output (suppress all metadata)",
         action="store_true",
     )
+    parser.add_argument(
+        "--retry",
+        type=int,
+        metavar="N",
+        help="Number of retry attempts for transient errors (default: 0)",
+        default=0,
+    )
+    parser.add_argument(
+        "--backoff",
+        type=float,
+        metavar="SECONDS",
+        help=(
+            "Initial backoff time in seconds for exponential backoff "
+            "(default: 1.0)"
+        ),
+        default=1.0,
+    )
     return parser.parse_args()
 
 
@@ -361,6 +383,30 @@ def send_notification(
         printer(f"Warning: Failed to send notification: {e}", quiet=False)
 
 
+def is_retryable_error(error: Exception) -> bool:
+    """Determine if an error is transient and should be retried
+
+    Args:
+        error: Exception object
+
+    Returns:
+        True if error is retryable, False otherwise
+    """
+    error_str = str(error)
+
+    # Check the original exception in the chain
+    original_error = error
+    while original_error.__cause__ is not None:
+        original_error = original_error.__cause__
+        error_str = str(original_error) + "\n" + error_str
+
+    # Only retry on "missing segments" errors (server availability issues)
+    if "Failed to check missing segments" in error_str:
+        return True
+
+    return False
+
+
 def extract_error_message(error: Exception) -> str:
     """Extract clean error message from database exceptions
 
@@ -410,6 +456,75 @@ def extract_error_message(error: Exception) -> str:
     # Return first line of error message if no specific pattern found
     first_line = str(error).split("\n")[0]
     return first_line
+
+
+def execute_with_retry(
+    query,
+    engine=None,
+    no_cache=False,
+    quiet=True,
+    max_retries=0,
+    initial_backoff=1.0,
+    show_retry_messages=True,
+):
+    """Execute query with retry logic and exponential backoff
+
+    Args:
+        query: SQL query string
+        engine: SQLAlchemy engine (optional)
+        no_cache: Skip cache if True
+        quiet: Suppress cache messages if True
+        max_retries: Number of retry attempts (0 = no retry)
+        initial_backoff: Initial backoff time in seconds
+        show_retry_messages: Show retry progress messages
+
+    Returns:
+        DataFrame with query results
+
+    Raises:
+        RuntimeError: After all retries exhausted
+    """
+    attempt = 0
+    backoff = initial_backoff
+
+    while True:
+        try:
+            return execute(
+                query=query,
+                engine=engine,
+                no_cache=no_cache,
+                quiet=quiet,
+            )
+        except RuntimeError as e:
+            # Check if error is retryable
+            cause = e.__cause__ if e.__cause__ else e
+            if not isinstance(cause, Exception) or not is_retryable_error(
+                cause
+            ):
+                # Not a transient error, raise immediately
+                raise
+
+            # Check if we have retries left
+            if attempt >= max_retries:
+                # No more retries, raise the error
+                raise
+
+            # Calculate wait time with exponential backoff
+            wait_time = backoff * (2**attempt)
+
+            # Show retry message if not in quiet mode
+            if show_retry_messages:
+                print(
+                    f"Retrying ({attempt + 1}/{max_retries}) "
+                    f"in {wait_time:.1f}s...",
+                    file=sys.stderr,
+                )
+
+            # Wait before retry
+            time.sleep(wait_time)
+
+            # Increment attempt counter
+            attempt += 1
 
 
 def execute(query, engine=None, no_cache=False, quiet=True):
@@ -504,10 +619,20 @@ def app():
     if show_query:
         print(f"In[query]:\n{query}")
 
-    # Execute query with optional timing
+    # Determine if retry messages should be shown
+    show_retry_messages = not args.compact and not args.quiet
+
+    # Execute query with optional timing and retry
     start_time = time.time() if (args.timing or args.noti) else 0.0
     try:
-        df = execute(query=query, no_cache=args.no_cache, quiet=cache_quiet)
+        df = execute_with_retry(
+            query=query,
+            no_cache=args.no_cache,
+            quiet=cache_quiet,
+            max_retries=args.retry,
+            initial_backoff=args.backoff,
+            show_retry_messages=show_retry_messages,
+        )
     except RuntimeError as e:
         # Clean error message from extract_error_message()
         # No traceback for controlled errors
