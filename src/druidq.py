@@ -156,8 +156,8 @@ def get_query(args):
     if fmt_keys:
         fmt_values = {}
         for key in fmt_keys:
-            # Remove {{ and }} from key
-            k = key[2:-2]
+            # Remove {{ and }} from key and strip whitespace
+            k = key[2:-2].strip()
             # Priority: params from comment > environment variables
             if params and k in params:
                 fmt_values[k] = params[k]
@@ -168,10 +168,9 @@ def get_query(args):
         # to avoid issues with { } in SQL
         formatted_out = out
         for key in fmt_keys:
-            k = key[2:-2]
-            formatted_out = formatted_out.replace(
-                f"{{{{{k}}}}}", fmt_values[k]
-            )
+            # Preserve original spacing in template for replacement
+            k = key[2:-2].strip()
+            formatted_out = formatted_out.replace(key, fmt_values[k])
 
         out = formatted_out
     # }}}
