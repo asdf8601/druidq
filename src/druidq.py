@@ -292,6 +292,12 @@ Priority:
         help="Send notification when query completes (requires noti)",
         action="store_true",
     )
+    parser.add_argument(
+        "-c",
+        "--compact",
+        help="Only print query output (suppress all metadata)",
+        action="store_true",
+    )
     return parser.parse_args()
 
 
@@ -403,13 +409,40 @@ def app():
                 print(f"  {key}: {value}")
         return
 
-    # Default: only output
-    # -v: input + output
-    # -q: nothing (except explicit prints in eval)
-    show_query = args.verbose
-    show_output = not args.quiet
-    show_eval_input = args.verbose
-    cache_quiet = not args.verbose
+    # Priority: -q > -c > -v > default
+    # -q: suppress everything (except explicit prints in eval)
+    # -v: show input + output
+    # -c: only output (suppress metadata)
+    # default: only output
+
+    if args.quiet:
+        # -q wins: suppress everything
+        show_query = False
+        show_output = False
+        show_eval_input = False
+        cache_quiet = True
+        show_timing = False
+    elif args.compact:
+        # -c: only show output, suppress metadata
+        show_query = False
+        show_output = True
+        show_eval_input = False
+        cache_quiet = True
+        show_timing = False
+    elif args.verbose:
+        # -v: show everything
+        show_query = True
+        show_output = True
+        show_eval_input = True
+        cache_quiet = False
+        show_timing = args.timing
+    else:
+        # default: only output
+        show_query = False
+        show_output = True
+        show_eval_input = False
+        cache_quiet = True
+        show_timing = args.timing
 
     if show_query:
         print(f"In[query]:\n{query}")
@@ -420,7 +453,7 @@ def app():
     elapsed = 0.0
     if args.timing or args.noti:
         elapsed = time.time() - start_time
-    if args.timing:
+    if show_timing:
         print(f"\nExecution time: {elapsed:.3f}s")
 
     # Handle --output: export to different formats
